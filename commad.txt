@@ -1,0 +1,20 @@
+python train.py --yaml ultralytics/models/v8/yolov8-timm.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-dyhead.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-act.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-EfficientFormerV2.yaml --info
+
+python train.py --yaml ultralytics/models/v8/yolov8.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-bifpn.yaml --info
+
+python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --workers 8 --batch 32
+python train.py --yaml ultralytics/models/v8/yolov8n-efficientViT.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --unamp
+python train.py --yaml ultralytics/models/v8/yolov8n-timm.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32
+python train.py --yaml ultralytics/models/v8/yolov8n-fasternet.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --unamp --fraction 0.1
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-ODConv.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --fraction 0.1
+
+python val.py --weight runs/train/exp/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test
+python val.py --weight runs/train/exp2/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test
+python val.py --weight runs/train/exp3/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test
+python val.py --weight runs/train/exp4/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test
+
+python detect.py --weight runs/train/exp4/weights/best.pt --source video.mp4 --conf 0.25
