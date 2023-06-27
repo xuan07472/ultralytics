@@ -42,6 +42,7 @@ def parse_opt():
     parser.add_argument('--workers', type=int, default=4, help='max dataloader workers (per RANK in DDP mode)')
     parser.add_argument('--project', type=str, default=ROOT / 'runs/train', help='save to project/name')
     parser.add_argument('--name', type=str, default='exp', help='save to project/name')
+    parser.add_argument('--resume', type=str, default='', help='resume training from last checkpoint')
     parser.add_argument('--optimizer', type=str, choices=['SGD', 'Adam', 'Adamax', 'NAdam', 'RAdam', 'AdamW', 'RMSProp', 'auto'], default='SGD', help='optimizer (auto -> ultralytics/yolo/engine/trainer.py in build_optimizer funciton.)')
     parser.add_argument('--close_mosaic', type=int, default=0, help='(int) disable mosaic augmentation for final epochs')
     parser.add_argument('--info', action="store_true", help='model info verbose')

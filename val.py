@@ -12,6 +12,7 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--weight', type=str, default='yolov8n.pt', help='training model path')
     parser.add_argument('--data', type=str, default='ultralytics/datasets/coco128.yaml', help='data yaml path')
+    parser.add_argument('--batch', type=int, default=16, help='number of images per batch (-1 for AutoBatch)')
     parser.add_argument('--split', type=str, default='test', choices=['train', 'val', 'test'], help='dataset split to use for validation, i.e. val, test or train')
     parser.add_argument('--project', type=str, default='runs/val', help='project name')
     parser.add_argument('--name', type=str, default='exp', help='experiment name (project/name)')
