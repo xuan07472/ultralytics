@@ -18,7 +18,7 @@ python train.py --yaml ultralytics/models/v8/yolov8-C2f-Faster-EMA.yaml --data /
 python val.py --weight runs/train/exp/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test
 python val.py --weight runs/train/exp2/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test
 python val.py --weight runs/train/exp3/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test
-python val.py --weight runs/train/exp4/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test
+python val.py --weight runs/train/exp4/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --split test --save_txt
 
 python detect.py --weight runs/train/exp4/weights/best.pt --source video.mp4 --conf 0.25
 

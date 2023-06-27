@@ -16,6 +16,7 @@ def parse_opt():
     parser.add_argument('--split', type=str, default='test', choices=['train', 'val', 'test'], help='dataset split to use for validation, i.e. val, test or train')
     parser.add_argument('--project', type=str, default='runs/val', help='project name')
     parser.add_argument('--name', type=str, default='exp', help='experiment name (project/name)')
+    parser.add_argument('--save_txt', action="store_true", help='save results as .txt file')
     parser.add_argument('--save_json', action="store_true", help='save results to JSON file')
     parser.add_argument('--save_hybrid', action="store_true", help='save hybrid version of labels (labels + additional predictions)')
     parser.add_argument('--conf', type=float, default=0.001, help='object confidence threshold for detection (0.001 in val)')
