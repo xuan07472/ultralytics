@@ -4,6 +4,7 @@ python train.py --yaml ultralytics/models/v8/yolov8-act.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-EfficientFormerV2.yaml --info
 
 python train.py --yaml ultralytics/models/v8/yolov8.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-slimneck.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-bifpn.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-DBB.yaml --info
 
@@ -24,3 +25,11 @@ python detect.py --weight runs/train/exp4/weights/best.pt --source video.mp4 --c
 
 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --workers 8 --batch 32 --fraction 0.1
 python train.py --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --workers 8 --batch 32 --fraction 0.1 --resume runs/train/exp/weights/last.pt
+
+python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_seaship/data.yaml --workers 8 --batch 64 --cache --close_mosaic 20 --epochs 150 
+python val.py --weight runs/train/exp/weights/best.pt --data /home/hjj/Desktop/dataset/dataset_seaship/data.yaml --split test --save_json
+python dataset/yolo2coco.py --image_path /home/hjj/Desktop/dataset/dataset_seaship/images/test --label_path /home/hjj/Desktop/dataset/dataset_seaship/labels/test
+python cal_coco_metrice.py --pred_json runs/val/exp/predictions.json --anno_json data.json
+
+python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_seaship/data.yaml --workers 8 --batch 64 --cache --epochs 20 --name exp
+python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n-timm.yaml --data /home/hjj/Desktop/dataset/dataset_seaship/data.yaml --workers 8 --batch 64 --cache --epochs 20 --name exp1
