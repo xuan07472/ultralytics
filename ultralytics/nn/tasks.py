@@ -8,11 +8,7 @@ import timm
 import torch
 import torch.nn as nn
 
-from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
-                                    Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
-                                    Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, Segment, Detect_DyHead, Fusion, C2f_Faster, C2f_ODConv, C2f_Faster_EMA, EMA, C2f_DBB,
-                                    GSConv, VoVGSCSP, VoVGSCSPC)
+from ultralytics.nn.modules import *
 from ultralytics.yolo.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.yolo.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.yolo.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -124,7 +120,11 @@ class BaseModel(nn.Module):
             None
         """
         c = m == self.model[-1]  # is final layer, copy input as inplace fix
-        o = thop.profile(m, inputs=[x.copy() if c else x], verbose=False)[0] / 1E9 * 2 if thop else 0  # FLOPs
+        if type(x) is list:
+            bs = x[0].size(0)
+        else:
+            bs = x.size(0)
+        o = thop.profile(m, inputs=[x.copy() if c else x], verbose=False)[0] / 1E9 * 2 / bs if thop else 0  # FLOPs
         t = time_sync()
         for _ in range(10):
             m(x.copy() if c else x)
@@ -636,7 +636,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             LOGGER.info(f"{colorstr('activation:')} {act}")  # print
 
     if verbose:
-        LOGGER.info(f"\n{'':>3}{'from':>20}{'n':>3}{'params':>10}  {'module':<45}{'arguments':<30}")
+        LOGGER.info(f"\n{'':>3}{'from':>20}{'n':>3}{'params':>10}  {'module':<60}{'arguments':<30}")
     ch = [ch]
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     is_backbone = False
@@ -706,9 +706,14 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                    }:
             m = m(*args)
             c2 = m.channel
-        elif m in {EMA}:
+        elif m in {EMA, SpatialAttention, BiLevelRoutingAttention, BiLevelRoutingAttention_nchw,
+                   TripletAttention, CoordAtt, CBAM, BAMBlock}:
             c2 = ch[f]
             args = [c2, *args]
+            # print(args)
+        elif m in {SimAM, SpatialGroupEnhance}:
+            # print(args)
+            pass
         else:
             c2 = ch[f]
 
@@ -723,7 +728,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         m.np = sum(x.numel() for x in m_.parameters())  # number params
         m_.i, m_.f, m_.type = i + 4 if is_backbone else i, f, t  # attach index, 'from' index, type
         if verbose:
-            LOGGER.info(f'{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<45}{str(args):<30}')  # print
+            LOGGER.info(f'{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<60}{str(args):<30}')  # print
         save.extend(x % (i + 4 if is_backbone else i) for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
         layers.append(m_)
         if i == 0:
@@ -734,7 +739,6 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 ch.insert(0, 0)
         else:
             ch.append(c2)
-    
     return nn.Sequential(*layers), sorted(save)
 
 

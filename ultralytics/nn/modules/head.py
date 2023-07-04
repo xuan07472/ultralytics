@@ -16,7 +16,7 @@ from .conv import Conv
 from .transformer import MLP, DeformableTransformerDecoder, DeformableTransformerDecoderLayer
 from .utils import bias_init_with_prob, linear_init_
 
-__all__ = 'Detect', 'Segment', 'Pose', 'Classify', 'RTDETRDecoder'
+__all__ = 'Detect', 'Segment', 'Pose', 'Classify', 'RTDETRDecoder', 'Detect_DyHead'
 
 class Detect(nn.Module):
     """YOLOv8 Detect head for detection models."""

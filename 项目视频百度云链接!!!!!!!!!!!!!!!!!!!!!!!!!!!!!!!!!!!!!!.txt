@@ -10,3 +10,7 @@
 链接：https://pan.baidu.com/s/1VrhtnE9-ArDqvDPb_DtLtg?pwd=ikx6 
 提取码：ikx6 
 1. 计算COCO指标教程
+
+链接：https://pan.baidu.com/s/1jYKi__nzatrJdo_9Hyy7NQ?pwd=ppjy 
+提取码：ppjy 
+1.如何在yaml配置文件中添加注意力层

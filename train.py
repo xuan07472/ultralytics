@@ -84,5 +84,10 @@ if __name__ == '__main__':
     if opt.info:
         model.info(detailed=True, verbose=True)
         model.profile(opt.imgsz)
+        
+        print('before fuse...')
+        model.info(detailed=False, verbose=True)
+        print('after fuse...')
+        model.fuse()
     else:
         model.train(**transformer_opt(opt))
