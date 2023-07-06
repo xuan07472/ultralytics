@@ -39,7 +39,7 @@ def parse_opt():
     parser.add_argument('--imgsz', type=int, default=640, help='size of input images as integer')
     parser.add_argument('--cache', type=str, nargs='?', const='ram', help='image --cache ram/disk')
     parser.add_argument('--device', type=str, default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--workers', type=int, default=4, help='max dataloader workers (per RANK in DDP mode)')
+    parser.add_argument('--workers', type=int, default=8, help='max dataloader workers (per RANK in DDP mode)')
     parser.add_argument('--project', type=str, default=ROOT / 'runs/train', help='save to project/name')
     parser.add_argument('--name', type=str, default='exp', help='save to project/name')
     parser.add_argument('--resume', type=str, default='', help='resume training from last checkpoint')
