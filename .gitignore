@@ -158,3 +158,4 @@ weights/
 # Custom configuration
 *.cache
 try.ipynb
+*_c.yaml

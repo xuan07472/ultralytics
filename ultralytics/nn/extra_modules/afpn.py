@@ -2,9 +2,9 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .conv import Conv
-from .block import C2f, C2f_DBB, C2f_Faster, C2f_Faster_EMA, C2f_ODConv, VoVGSCSP, VoVGSCSPC
-from .block import C3, C3Ghost
+from ..modules.conv import Conv
+from ..modules.block import C2f, C3, C3Ghost
+from .block import *
 
 __all__ = ['AFPN_P345', 'AFPN_P345_Custom', 'AFPN_P2345', 'AFPN_P2345_Custom']
 

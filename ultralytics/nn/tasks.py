@@ -8,6 +8,7 @@ import timm
 import torch
 import torch.nn as nn
 
+from ultralytics.nn.extra_modules import *
 from ultralytics.nn.modules import *
 from ultralytics.yolo.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.yolo.utils.checks import check_requirements, check_suffix, check_yaml
@@ -701,7 +702,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c2 = m.feature_info.channels()
         elif m in {convnextv2_atto, convnextv2_femto, convnextv2_pico, convnextv2_nano, convnextv2_tiny, convnextv2_base, convnextv2_large, convnextv2_huge,
                    fasternet_t0, fasternet_t1, fasternet_t2, fasternet_s, fasternet_m, fasternet_l,
-                   efficientvit_b0, efficientvit_b1, efficientvit_b2, efficientvit_b3,
+                   EfficientViT_M0, EfficientViT_M1, EfficientViT_M2, EfficientViT_M3, EfficientViT_M4, EfficientViT_M5,
                    efficientformerv2_s0, efficientformerv2_s1, efficientformerv2_s2, efficientformerv2_l
                    }:
             m = m(*args)
