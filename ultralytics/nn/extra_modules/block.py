@@ -3,11 +3,11 @@ import torch.nn as nn
 import torch.nn.functional as F
 from ..modules.conv import Conv, DWConv
 from ..modules.block import *
-from .attention import EMA
+from .attention import *
 from .rep_block import DiverseBranchBlock
 
 __all__ = ['DyHeadBlock', 'Fusion', 'C2f_Faster', 'C2f_ODConv', 'C2f_Faster_EMA', 'C2f_DBB',
-           'GSConv', 'VoVGSCSP', 'VoVGSCSPC']
+           'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -735,3 +735,44 @@ class VoVGSCSPC(VoVGSCSP):
         self.gsb = GSBottleneckC(c_, c_, 1, 1)
         
 ######################################## SlimNeck end ########################################
+
+######################################## C2f-CloAtt begin ########################################
+
+class Bottleneck_CloAtt(Bottleneck):
+    """Standard bottleneck With CloAttention."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=..., e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        self.attention = EfficientAttention(dim=c2)
+    
+    def forward(self, x):
+        """'forward()' applies the YOLOv5 FPN to input data."""
+        return x + self.attention(self.cv2(self.cv1(x))) if self.add else self.attention(self.cv2(self.cv1(x)))
+
+class C2f_CloAtt(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_CloAtt(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C2f-CloAtt end ########################################
+
+######################################## C3-CloAtt begin ########################################
+
+class Bottleneck_CloAtt(Bottleneck):
+    """Standard bottleneck With CloAttention."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=..., e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        self.attention = EfficientAttention(dim=c2)
+    
+    def forward(self, x):
+        """'forward()' applies the YOLOv5 FPN to input data."""
+        return x + self.attention(self.cv2(self.cv1(x))) if self.add else self.attention(self.cv2(self.cv1(x)))
+
+class C3_CloAtt(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_CloAtt(c_, c_, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
+
+######################################## C3-CloAtt end ########################################

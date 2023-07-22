@@ -4,11 +4,13 @@ python train.py --yaml ultralytics/models/v8/yolov8-act.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-EfficientFormerV2.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-efficientViT.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-ODConv.yaml --info
+python train.py --yaml  ultralytics/models/v8/yolov8-vanillanet.yaml --info
 
 python train.py --yaml ultralytics/models/v8/yolov8.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-slimneck.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-bifpn.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-DBB.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-CloAtt.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-p2.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5n.yaml --info
@@ -16,6 +18,7 @@ python train.py --yaml ultralytics/models/v5/yolov5n-dyhead.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-act.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-fasternet.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-bifpn.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5n-C3-CloAtt.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-attention.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345.yaml --info
