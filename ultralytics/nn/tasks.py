@@ -22,6 +22,8 @@ from ultralytics.nn.backbone.fasternet import *
 from ultralytics.nn.backbone.efficientViT import *
 from ultralytics.nn.backbone.EfficientFormerV2 import *
 from ultralytics.nn.backbone.VanillaNet import *
+from ultralytics.nn.backbone.revcol import *
+from ultralytics.nn.backbone.lsknet import *
 
 try:
     import thop
@@ -706,11 +708,16 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                    EfficientViT_M0, EfficientViT_M1, EfficientViT_M2, EfficientViT_M3, EfficientViT_M4, EfficientViT_M5,
                    efficientformerv2_s0, efficientformerv2_s1, efficientformerv2_s2, efficientformerv2_l,
                    vanillanet_5, vanillanet_6, vanillanet_7, vanillanet_8, vanillanet_9, vanillanet_10, vanillanet_11, vanillanet_12, vanillanet_13, vanillanet_13_x1_5, vanillanet_13_x1_5_ada_pool,
+                   RevCol,
+                   lsknet_t, lsknet_t
                    }:
+            if m is RevCol:
+                args[1] = [make_divisible(min(k, max_channels) * width, 8) for k in args[1]]
+                args[2] = [max(round(k * depth), 1) for k in args[2]]
             m = m(*args)
             c2 = m.channel
         elif m in {EMA, SpatialAttention, BiLevelRoutingAttention, BiLevelRoutingAttention_nchw,
-                   TripletAttention, CoordAtt, CBAM, BAMBlock}:
+                   TripletAttention, CoordAtt, CBAM, BAMBlock, LSKBlock}:
             c2 = ch[f]
             args = [c2, *args]
             # print(args)

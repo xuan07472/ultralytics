@@ -743,7 +743,7 @@ class Bottleneck_CloAtt(Bottleneck):
 
     def __init__(self, c1, c2, shortcut=True, g=1, k=..., e=0.5):
         super().__init__(c1, c2, shortcut, g, k, e)
-        self.attention = EfficientAttention(dim=c2)
+        self.attention = EfficientAttention(c2)
     
     def forward(self, x):
         """'forward()' applies the YOLOv5 FPN to input data."""
@@ -763,7 +763,8 @@ class Bottleneck_CloAtt(Bottleneck):
 
     def __init__(self, c1, c2, shortcut=True, g=1, k=..., e=0.5):
         super().__init__(c1, c2, shortcut, g, k, e)
-        self.attention = EfficientAttention(dim=c2)
+        self.attention = EfficientAttention(c2)
+        # self.attention = LSKBlock(c2)
     
     def forward(self, x):
         """'forward()' applies the YOLOv5 FPN to input data."""
