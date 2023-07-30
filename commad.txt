@@ -13,6 +13,8 @@ python train.py --yaml ultralytics/models/v8/yolov8-slimneck.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-bifpn.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-DBB.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-CloAtt.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-SCConv.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-ScConv.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-p2.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5n.yaml --info
@@ -22,6 +24,8 @@ python train.py --yaml ultralytics/models/v5/yolov5n-fasternet.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-RevCol.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-bifpn.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-C3-CloAtt.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5n-C3-SCConv.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5n-C3-ScConv.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-LSKNet.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-attention.yaml --info
 
@@ -40,8 +44,9 @@ python train.py --yaml ultralytics/models/v8/yolov8n-efficientViT.yaml --data /h
 python train.py --yaml ultralytics/models/v8/yolov8n-timm.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --fraction 0.1
 python train.py --yaml ultralytics/models/v8/yolov8n-fasternet.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --unamp --fraction 0.1
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-DBB.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --fraction 0.1
-python train.py --yaml ultralytics/models/v8/yolov8-LSKNet.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --fraction 0.1 --cache
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-ScConv.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --fraction 0.1 --cache
 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8-LSKNet.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --workers 8 --batch 64 --epoch 30 --cache
+python train.py --yaml ultralytics/models/v8/yolov8-test.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --fraction 0.1 --cache
 
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-Faster-EMA.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --fraction 0.1
 
