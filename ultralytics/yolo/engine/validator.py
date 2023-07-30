@@ -187,6 +187,9 @@ class BaseValidator:
         else:
             LOGGER.info('Speed: %.1fms preprocess, %.1fms inference, %.1fms loss, %.1fms postprocess per image' %
                         tuple(self.speed.values()))
+            FPS = 1000 / sum(tuple(self.speed.values())) # add FPS
+            LOGGER.info(f'FPS: {round(FPS, 3)}')
+            
             if self.args.save_json and self.jdict:
                 with open(str(self.save_dir / 'predictions.json'), 'w') as f:
                     LOGGER.info(f'Saving {f.name}...')
