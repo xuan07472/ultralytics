@@ -39,7 +39,7 @@ python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P345-Custom.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P2345.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P2345-Custom.yaml --info
 
-python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --workers 8 --batch 32
+python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --workers 8 --batch 32 --fraction 0.1
 python train.py --yaml ultralytics/models/v8/yolov8n-efficientViT.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 64
 python train.py --yaml ultralytics/models/v8/yolov8n-timm.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --fraction 0.1
 python train.py --yaml ultralytics/models/v8/yolov8n-fasternet.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 32 --unamp --fraction 0.1
@@ -66,5 +66,3 @@ python cal_coco_metrice.py --pred_json runs/val/exp/predictions.json --anno_json
 
 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_seaship/data.yaml --workers 8 --batch 64 --cache --epochs 20 --name exp
 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n-timm.yaml --data /home/hjj/Desktop/dataset/dataset_seaship/data.yaml --workers 8 --batch 64 --cache --epochs 20 --name exp1
-
-CUDA_VISIBLE_DEVICES=1 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /root/public_dataset/cat_dog/data.yaml --workers 8 --batch 64 --fraction 0.4 --cache

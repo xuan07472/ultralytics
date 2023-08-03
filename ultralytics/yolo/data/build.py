@@ -107,7 +107,7 @@ def build_dataloader(dataset, batch, workers, shuffle=True, rank=-1):
                               collate_fn=getattr(dataset, 'collate_fn', None),
                               worker_init_fn=seed_worker,
                               generator=generator,
-                              drop_last=True)
+                              drop_last=False)
 
 
 def check_source(source):

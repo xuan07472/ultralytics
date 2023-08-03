@@ -154,8 +154,8 @@ def bbox_mpdiou(box1, box2, xywh=True, mpdiou_hw=1, eps=1e-7):
 
     # IoU
     iou = inter / union
-    d1 = (b2_x1 - b1_x1) ** 2 + (b2_y1 - b2_y1) ** 2
-    d2 = (b2_x2 - b1_x2) ** 2 + (b2_y2 - b1_y1) ** 2
+    d1 = (b2_x1 - b1_x1) ** 2 + (b2_y1 - b1_y1) ** 2
+    d2 = (b2_x2 - b1_x2) ** 2 + (b2_y2 - b1_y2) ** 2
     return iou - d1 / mpdiou_hw - d2 / mpdiou_hw  # MPDIoU
 
 def mask_iou(mask1, mask2, eps=1e-7):
