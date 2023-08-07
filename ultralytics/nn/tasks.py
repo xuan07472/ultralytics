@@ -717,7 +717,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             m = m(*args)
             c2 = m.channel
         elif m in {EMA, SpatialAttention, BiLevelRoutingAttention, BiLevelRoutingAttention_nchw,
-                   TripletAttention, CoordAtt, CBAM, BAMBlock, LSKBlock, ScConv}:
+                   TripletAttention, CoordAtt, CBAM, BAMBlock, LSKBlock, ScConv, LAWDS}:
             c2 = ch[f]
             args = [c2, *args]
             # print(args)

@@ -27,7 +27,9 @@ python train.py --yaml ultralytics/models/v5/yolov5n-C3-CloAtt.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-C3-SCConv.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-C3-ScConv.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-LSKNet.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-LAWDS.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-attention.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-LAWDS.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345-Custom.yaml --info

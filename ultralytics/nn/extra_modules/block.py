@@ -1,13 +1,15 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 from ..modules.conv import Conv, DWConv
 from ..modules.block import *
 from .attention import *
 from .rep_block import DiverseBranchBlock
 
 __all__ = ['DyHeadBlock', 'Fusion', 'C2f_Faster', 'C2f_ODConv', 'C2f_Faster_EMA', 'C2f_DBB',
-           'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv']
+           'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
+           'LAWDS']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -943,3 +945,31 @@ class C2f_ScConv(C2f):
         self.m = nn.ModuleList(Bottleneck_ScConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
 ######################################## ScConv end ########################################
+
+######################################## AWDS begin ########################################
+
+class LAWDS(nn.Module):
+    # Light Adaptive-weight downsampling
+    def __init__(self, ch, group=16) -> None:
+        super().__init__()
+        
+        self.softmax = nn.Softmax(dim=-1)
+        self.attention = nn.Sequential(
+            nn.AvgPool2d(kernel_size=3, stride=1, padding=1),
+            Conv(ch, ch, k=1)
+        )
+        
+        self.ds_conv = Conv(ch, ch * 4, k=3, s=2, g=(ch // group))
+        
+    
+    def forward(self, x):
+        # bs, ch, 2*h, 2*w => bs, ch, h, w, 4
+        att = rearrange(self.attention(x), 'bs ch (s1 h) (s2 w) -> bs ch h w (s1 s2)', s1=2, s2=2)
+        att = self.softmax(att)
+        
+        # bs, 4 * ch, h, w => bs, ch, h, w, 4
+        x = rearrange(self.ds_conv(x), 'bs (s ch) h w -> bs ch h w s', s=4)
+        x = torch.sum(x * att, dim=-1)
+        return x
+    
+######################################## AWDS end ########################################
