@@ -2,14 +2,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange
-from ..modules.conv import Conv, DWConv
+from ..modules.conv import Conv, DWConv, RepConv
 from ..modules.block import *
 from .attention import *
 from .rep_block import DiverseBranchBlock
+from ultralytics.yolo.utils.torch_utils import make_divisible
 
 __all__ = ['DyHeadBlock', 'Fusion', 'C2f_Faster', 'C2f_ODConv', 'C2f_Faster_EMA', 'C2f_DBB',
            'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
-           'LAWDS']
+           'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -973,3 +974,136 @@ class LAWDS(nn.Module):
         return x
     
 ######################################## AWDS end ########################################
+
+######################################## EMSConv+EMSConvP begin ########################################
+
+class EMSConv(nn.Module):
+    # Efficient Multi-Scale Conv
+    def __init__(self, channel=256, kernels=[3, 5]):
+        super().__init__()
+        self.groups = len(kernels)
+        min_ch = channel // 4
+        assert min_ch >= 16, f'channel must Greater than {64}, but {channel}'
+        
+        self.convs = nn.ModuleList([])
+        for ks in kernels:
+            self.convs.append(Conv(c1=min_ch, c2=min_ch, k=ks))
+        self.conv_1x1 = Conv(channel, channel, k=1)
+        
+    def forward(self, x):
+        _, c, _, _ = x.size()
+        x_cheap, x_group = torch.split(x, [c // 2, c // 2], dim=1)
+        x_group = rearrange(x_group, 'bs (g ch) h w -> bs ch h w g', g=self.groups)
+        x_group = torch.stack([self.convs[i](x_group[..., i]) for i in range(len(self.convs))])
+        x_group = rearrange(x_group, 'g bs ch h w -> bs (g ch) h w')
+        x = torch.cat([x_cheap, x_group], dim=1)
+        x = self.conv_1x1(x)
+        
+        return x
+
+class EMSConvP(nn.Module):
+    # Efficient Multi-Scale Conv Plus
+    def __init__(self, channel=256, kernels=[1, 3, 5, 7]):
+        super().__init__()
+        self.groups = len(kernels)
+        min_ch = channel // self.groups
+        assert min_ch >= 16, f'channel must Greater than {16 * self.groups}, but {channel}'
+        
+        self.convs = nn.ModuleList([])
+        for ks in kernels:
+            self.convs.append(Conv(c1=min_ch, c2=min_ch, k=ks))
+        self.conv_1x1 = Conv(channel, channel, k=1)
+        
+    def forward(self, x):
+        x_group = rearrange(x, 'bs (g ch) h w -> bs ch h w g', g=self.groups)
+        x_convs = torch.stack([self.convs[i](x_group[..., i]) for i in range(len(self.convs))])
+        x_convs = rearrange(x_convs, 'g bs ch h w -> bs (g ch) h w')
+        x_convs = self.conv_1x1(x_convs)
+        
+        return x_convs
+
+class Bottleneck_EMSC(Bottleneck):
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = EMSConv(c2)
+
+class C3_EMSC(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_EMSC(c_, c_, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
+
+class C2f_EMSC(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_EMSC(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+class Bottleneck_EMSCP(Bottleneck):
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = EMSConvP(c2)
+
+class C3_EMSCP(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_EMSCP(c_, c_, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
+
+class C2f_EMSCP(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_EMSCP(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## EMSConv+EMSConvP end ########################################
+
+######################################## RCSOSA start ########################################
+
+class SR(nn.Module):
+    # Shuffle RepVGG
+    def __init__(self, c1, c2):
+        super().__init__()
+        c1_ = int(c1 // 2)
+        c2_ = int(c2 // 2)
+        self.repconv = RepConv(c1_, c2_, bn=True)
+
+    def forward(self, x):
+        x1, x2 = x.chunk(2, dim=1)
+        out = torch.cat((x1, self.repconv(x2)), dim=1)
+        out = self.channel_shuffle(out, 2)
+        return out
+
+    def channel_shuffle(self, x, groups):
+        batchsize, num_channels, height, width = x.data.size()
+        channels_per_group = num_channels // groups
+        x = x.view(batchsize, groups, channels_per_group, height, width)
+        x = torch.transpose(x, 1, 2).contiguous()
+        x = x.view(batchsize, -1, height, width)
+        return x
+
+class RCSOSA(nn.Module):
+    # VoVNet with Res Shuffle RepVGG
+    def __init__(self, c1, c2, n=1, se=False, g=1, e=0.5):
+        super().__init__()
+        n_ = n // 2
+        c_ = make_divisible(int(c1 * e), 8)
+        self.conv1 = RepConv(c1, c_, bn=True)
+        self.conv3 = RepConv(int(c_ * 3), c2, bn=True)
+        self.sr1 = nn.Sequential(*[SR(c_, c_) for _ in range(n_)])
+        self.sr2 = nn.Sequential(*[SR(c_, c_) for _ in range(n_)])
+
+        self.se = None
+        if se:
+            self.se = SEAttention(c2)
+
+    def forward(self, x):
+        x1 = self.conv1(x)
+        x2 = self.sr1(x1)
+        x3 = self.sr2(x2)
+        x = torch.cat((x1, x2, x3), 1)
+        return self.conv3(x) if self.se is None else self.se(self.conv3(x))
+
+######################################## RCSOSA end ########################################

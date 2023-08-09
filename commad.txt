@@ -15,6 +15,9 @@ python train.py --yaml ultralytics/models/v8/yolov8-C2f-DBB.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-CloAtt.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-SCConv.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-ScConv.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-EMSC.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-EMSCP.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-RCSOSA.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-p2.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5n.yaml --info
@@ -28,6 +31,9 @@ python train.py --yaml ultralytics/models/v5/yolov5n-C3-SCConv.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-C3-ScConv.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-LSKNet.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-LAWDS.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSC.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSCP.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-RCSOSA.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-attention.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-LAWDS.yaml --info
 
