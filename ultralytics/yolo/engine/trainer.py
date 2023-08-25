@@ -32,7 +32,7 @@ from ultralytics.yolo.utils.dist import ddp_cleanup, generate_ddp_command
 from ultralytics.yolo.utils.files import get_latest_run, increment_path
 from ultralytics.yolo.utils.torch_utils import (EarlyStopping, ModelEMA, de_parallel, init_seeds, one_cycle,
                                                 select_device, strip_optimizer)
-
+from ultralytics.nn.extra_modules.kernel_warehouse import get_temperature
 
 class BaseTrainer:
     """
@@ -310,6 +310,8 @@ class BaseTrainer:
                 pbar = tqdm(enumerate(self.train_loader), total=nb, bar_format=TQDM_BAR_FORMAT)
             self.tloss = None
             self.optimizer.zero_grad()
+            if hasattr(self.model, 'criterion') and hasattr(self.model.criterion.bce, 'iou_mean'):
+                self.model.criterion.bce.is_train = True
             for i, batch in pbar:
                 self.run_callbacks('on_train_batch_start')
                 # Warmup
@@ -324,6 +326,10 @@ class BaseTrainer:
                         if 'momentum' in x:
                             x['momentum'] = np.interp(ni, xi, [self.args.warmup_momentum, self.args.momentum])
 
+                if hasattr(self.model, 'net_update_temperature'):
+                    temp = get_temperature(i + 1, epoch, len(self.train_loader), temp_epoch=20, temp_init_value=1.0)
+                    self.model.net_update_temperature(temp)
+                
                 # Forward
                 with torch.cuda.amp.autocast(self.amp):
                     batch = self.preprocess_batch(batch)
@@ -354,7 +360,9 @@ class BaseTrainer:
                         self.plot_training_samples(batch, ni)
 
                 self.run_callbacks('on_train_batch_end')
-
+            if hasattr(self.model.criterion.bce, 'iou_mean'):
+                self.model.criterion.bce.is_train = False
+            
             self.lr = {f'lr/pg{ir}': x['lr'] for ir, x in enumerate(self.optimizer.param_groups)}  # for loggers
 
             self.scheduler.step()

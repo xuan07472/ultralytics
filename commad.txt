@@ -18,6 +18,8 @@ python train.py --yaml ultralytics/models/v8/yolov8-C2f-ScConv.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-EMSC.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-EMSCP.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-RCSOSA.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-KernelWarehouse.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-test.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-p2.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5n.yaml --info
@@ -34,6 +36,8 @@ python train.py --yaml ultralytics/models/v5/yolov5-LAWDS.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSC.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSCP.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-RCSOSA.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-KernelWarehouse.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-C3-DySnakeConv.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-attention.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-LAWDS.yaml --info
 
@@ -72,5 +76,7 @@ python val.py --weight runs/train/exp3/weights/best.pt --data /home/hjj/Desktop/
 python dataset/yolo2coco.py --image_path /home/hjj/Desktop/dataset/dataset_seaship/images/test --label_path /home/hjj/Desktop/dataset/dataset_seaship/labels/test
 python cal_coco_metrice.py --pred_json runs/val/exp/predictions.json --anno_json data.json
 
-python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_seaship/data.yaml --workers 8 --batch 64 --cache --epochs 20 --name exp
+CUDA_VISIBLE_DEVICES=0 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --workers 8 --batch 48 --cache --epochs 100 --name exp --fraction 0.2
 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n-timm.yaml --data /home/hjj/Desktop/dataset/dataset_seaship/data.yaml --workers 8 --batch 64 --cache --epochs 20 --name exp1
+
+CUDA_VISIBLE_DEVICES=0 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8-KernelWarehouse.yaml --data /root/public_dataset/fire/data.yaml --workers 8 --batch 32 --cache --epochs 20 --name exp

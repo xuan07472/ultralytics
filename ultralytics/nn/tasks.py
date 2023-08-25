@@ -248,15 +248,26 @@ class DetectionModel(BaseModel):
         super().__init__()
         self.yaml = cfg if isinstance(cfg, dict) else yaml_model_load(cfg)  # cfg dict
 
+        # Warehouse_Manager
+        warehouse_manager_flag = self.yaml.get('Warehouse_Manager', False)
+        self.warehouse_manager = None
+        if warehouse_manager_flag:
+            self.warehouse_manager = Warehouse_Manager(cell_num_ratio=self.yaml.get('Warehouse_Manager_Ratio', 1.0))
+        
         # Define model
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
         if nc and nc != self.yaml['nc']:
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
             self.yaml['nc'] = nc  # override yaml value
-        self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
+        self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose, warehouse_manager=self.warehouse_manager)  # model, savelist
         self.names = {i: f'{i}' for i in range(self.yaml['nc'])}  # default names dict
         self.inplace = self.yaml.get('inplace', True)
 
+        if warehouse_manager_flag:
+            self.warehouse_manager.store()
+            self.warehouse_manager.allocate(self)
+            self.net_update_temperature(0)
+        
         # Build strides
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom, Segment, Pose)):
@@ -312,6 +323,11 @@ class DetectionModel(BaseModel):
 
     def init_criterion(self):
         return v8DetectionLoss(self)
+    
+    def net_update_temperature(self, temp):
+        for m in self.modules():
+            if hasattr(m, "update_temperature"):
+                m.update_temperature(temp)
 
 
 class SegmentationModel(DetectionModel):
@@ -618,7 +634,7 @@ def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
     return model, ckpt
 
 
-def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
+def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, input_channels(3)
     # Parse a YOLO model.yaml dictionary into a PyTorch model
     import ast
 
@@ -668,7 +684,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         if m in (Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
                  BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3, C2f_Faster, C2f_ODConv,
                  C2f_Faster_EMA, C2f_DBB, GSConv, VoVGSCSP, VoVGSCSPC, C2f_CloAtt, C3_CloAtt, SCConv, C2f_SCConv, C3_SCConv, C2f_ScConv, C3_ScConv,
-                 C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA):
+                 C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, KWConv, C2f_KW, C3_KW, DySnakeConv, C2f_DySnakeConv, C3_DySnakeConv):
             if args[0] == 'head_channel':
                 args[0] = d[args[0]]
             c1, c2 = ch[f], args[0]
@@ -676,9 +692,15 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                 c2 = make_divisible(min(c2, max_channels) * width, 8)
 
             args = [c1, c2, *args[1:]]
+            if m in (KWConv, C2f_KW, C3_KW):
+                args.insert(2, f'layer{i}')
+                args.insert(2, warehouse_manager)
+            if m in (DySnakeConv,):
+                c2 = c2 * 3
+            
             if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3, C2f_Faster, C2f_ODConv, C2f_Faster_EMA, C2f_DBB,
                      VoVGSCSP, VoVGSCSPC, C2f_CloAtt, C3_CloAtt, C2f_SCConv, C3_SCConv, C2f_ScConv, C3_ScConv,
-                     C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA):
+                     C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, C2f_KW, C3_KW, C2f_DySnakeConv, C3_DySnakeConv):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
@@ -720,7 +742,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             c2 = m.channel
         elif m in {EMA, SpatialAttention, BiLevelRoutingAttention, BiLevelRoutingAttention_nchw,
                    TripletAttention, CoordAtt, CBAM, BAMBlock, LSKBlock, ScConv, LAWDS, EMSConv, EMSConvP,
-                   SEAttention}:
+                   SEAttention, CPCA}:
             c2 = ch[f]
             args = [c2, *args]
             # print(args)

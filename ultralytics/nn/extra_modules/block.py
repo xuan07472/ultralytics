@@ -6,11 +6,14 @@ from ..modules.conv import Conv, DWConv, RepConv
 from ..modules.block import *
 from .attention import *
 from .rep_block import DiverseBranchBlock
+from .kernel_warehouse import KWConv
+from .dynamic_snake_conv import DySnakeConv
 from ultralytics.yolo.utils.torch_utils import make_divisible
 
 __all__ = ['DyHeadBlock', 'Fusion', 'C2f_Faster', 'C2f_ODConv', 'C2f_Faster_EMA', 'C2f_DBB',
            'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
-           'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA']
+           'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA', 'C3_KW', 'C2f_KW',
+           'C3_DySnakeConv', 'C2f_DySnakeConv']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -1106,4 +1109,59 @@ class RCSOSA(nn.Module):
         x = torch.cat((x1, x2, x3), 1)
         return self.conv3(x) if self.se is None else self.se(self.conv3(x))
 
-######################################## RCSOSA end ########################################
+######################################## C3 C2f KernelWarehouse start ########################################
+
+class Bottleneck_KW(Bottleneck):
+    """Standard bottleneck with kernel_warehouse."""
+
+    def __init__(self, c1, c2, wm=None, wm_name=None, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = KWConv(c1, c_, wm, f'{wm_name}_cv1', k[0], 1)
+        self.cv2 = KWConv(c_, c2, wm, f'{wm_name}_cv2' , k[1], 1, g=g)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        """'forward()' applies the YOLOv5 FPN to input data."""
+        return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+
+class C3_KW(C3):
+    def __init__(self, c1, c2, n=1, wm=None, wm_name=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_KW(c_, c_, wm, wm_name, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_KW(C2f):
+    def __init__(self, c1, c2, n=1, wm=None, wm_name=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_KW(self.c, self.c, wm, wm_name, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f KernelWarehouse end ########################################
+
+######################################## C3 C2f DySnakeConv end ########################################
+
+class Bottleneck_DySnakeConv(Bottleneck):
+    """Standard bottleneck with DySnakeConv."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv2 = DySnakeConv(c_, c2, k[1])
+        self.cv3 = Conv(c2 * 3, c2, k=1)
+    def forward(self, x):
+        """'forward()' applies the YOLOv5 FPN to input data."""
+        return x + self.cv3(self.cv2(self.cv1(x))) if self.add else self.cv3(self.cv2(self.cv1(x)))
+    
+
+class C3_DySnakeConv(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_DySnakeConv(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_DySnakeConv(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_DySnakeConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f DySnakeConv end ########################################

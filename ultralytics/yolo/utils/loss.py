@@ -9,9 +9,70 @@ from ultralytics.yolo.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.yolo.utils.tal import TaskAlignedAssigner, dist2bbox, make_anchors
 from ultralytics.yolo.utils.atss import ATSSAssigner, generate_anchors
 
-from .metrics import bbox_iou, bbox_mpdiou
+from .metrics import bbox_iou, bbox_mpdiou, wasserstein_loss
 from .tal import bbox2dist
 
+import math
+class SlideLoss(nn.Module):
+    def __init__(self, loss_fcn):
+        super(SlideLoss, self).__init__()
+        self.loss_fcn = loss_fcn
+        self.reduction = loss_fcn.reduction
+        self.loss_fcn.reduction = 'none'  # required to apply SL to each element
+
+    def forward(self, pred, true, auto_iou=0.5):
+        loss = self.loss_fcn(pred, true)
+        if auto_iou < 0.2:
+            auto_iou = 0.2
+        b1 = true <= auto_iou - 0.1
+        a1 = 1.0
+        b2 = (true > (auto_iou - 0.1)) & (true < auto_iou)
+        a2 = math.exp(1.0 - auto_iou)
+        b3 = true >= auto_iou
+        a3 = torch.exp(-(true - 1.0))
+        modulating_weight = a1 * b1 + a2 * b2 + a3 * b3
+        loss *= modulating_weight
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:  # 'none'
+            return loss
+
+class EMASlideLoss:
+    def __init__(self, loss_fcn, decay=0.999, tau=2000):
+        super(EMASlideLoss, self).__init__()
+        self.loss_fcn = loss_fcn
+        self.reduction = loss_fcn.reduction
+        self.loss_fcn.reduction = 'none'  # required to apply SL to each element
+        self.decay = lambda x: decay * (1 - math.exp(-x / tau))
+        self.is_train = True
+        self.updates = 0
+        self.iou_mean = 1.0
+    
+    def __call__(self, pred, true, auto_iou=0.5):
+        if self.is_train:
+            self.updates += 1
+            d = self.decay(self.updates)
+            self.iou_mean = d * self.iou_mean + (1 - d) * float(auto_iou.detach())
+        auto_iou = self.iou_mean
+        loss = self.loss_fcn(pred, true)
+        if auto_iou < 0.2:
+            auto_iou = 0.2
+        b1 = true <= auto_iou - 0.1
+        a1 = 1.0
+        b2 = (true > (auto_iou - 0.1)) & (true < auto_iou)
+        a2 = math.exp(1.0 - auto_iou)
+        b3 = true >= auto_iou
+        a3 = torch.exp(-(true - 1.0))
+        modulating_weight = a1 * b1 + a2 * b2 + a3 * b3
+        loss *= modulating_weight
+        if self.reduction == 'mean':
+            return loss.mean()
+        elif self.reduction == 'sum':
+            return loss.sum()
+        else:  # 'none'
+            return loss
 
 class VarifocalLoss(nn.Module):
     """Varifocal loss by Zhang et al. https://arxiv.org/abs/2008.13367."""
@@ -36,6 +97,8 @@ class BboxLoss(nn.Module):
         super().__init__()
         self.reg_max = reg_max
         self.use_dfl = use_dfl
+        self.nwd_loss = False
+        self.iou_ratio = 0.5
 
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask, mpdiou_hw=None):
         """IoU loss."""
@@ -43,6 +106,11 @@ class BboxLoss(nn.Module):
         iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
         # iou = bbox_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+        
+        if self.nwd_loss:
+            nwd = wasserstein_loss(pred_bboxes[fg_mask], target_bboxes[fg_mask])
+            nwd_loss = ((1.0 - nwd) * weight).sum() / target_scores_sum
+            loss_iou = self.iou_ratio * loss_iou +  (1 - self.iou_ratio) * nwd_loss
 
         # DFL loss
         if self.use_dfl:
@@ -91,6 +159,8 @@ class v8DetectionLoss:
 
         m = model.model[-1]  # Detect() module
         self.bce = nn.BCEWithLogitsLoss(reduction='none')
+        # self.bce = EMASlideLoss(nn.BCEWithLogitsLoss(reduction='none'))  # Exponential Moving Average Slide Loss
+        # self.bce = SlideLoss(nn.BCEWithLogitsLoss(reduction='none')) # Slide Loss
         self.hyp = h
         self.stride = m.stride  # model strides
         self.nc = m.nc  # number of classes
@@ -175,7 +245,8 @@ class v8DetectionLoss:
 
         # cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
-        loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        if isinstance(self.bce, nn.BCEWithLogitsLoss):
+            loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
 
         # bbox loss
         if fg_mask.sum():
@@ -183,6 +254,10 @@ class v8DetectionLoss:
             loss[0], loss[2] = self.bbox_loss(pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores,
                                               target_scores_sum, fg_mask, feats[0].shape[0] ** 2 + feats[0].shape[1] ** 2)
 
+        if isinstance(self.bce, (EMASlideLoss, SlideLoss)):
+            auto_iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True).mean()
+            loss[1] = self.bce(pred_scores, target_scores.to(dtype), auto_iou).sum() / target_scores_sum  # BCE
+        
         loss[0] *= self.hyp.box  # box gain
         loss[1] *= self.hyp.cls  # cls gain
         loss[2] *= self.hyp.dfl  # dfl gain
