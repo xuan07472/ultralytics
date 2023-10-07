@@ -9,6 +9,7 @@ python train.py --yaml ultralytics/models/v8/yolov8-RevCol.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-LSKNet.yaml --info
 
 python train.py --yaml ultralytics/models/v8/yolov8.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-EfficientHead.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-slimneck.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-bifpn.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-DBB.yaml --info
@@ -23,6 +24,7 @@ python train.py --yaml ultralytics/models/v8/yolov8-test.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-p2.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5n.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5n-EfficientHead.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-dyhead.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-act.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-fasternet.yaml --info

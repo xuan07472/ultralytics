@@ -10,7 +10,7 @@ from .kernel_warehouse import KWConv
 from .dynamic_snake_conv import DySnakeConv
 from ultralytics.yolo.utils.torch_utils import make_divisible
 
-__all__ = ['DyHeadBlock', 'Fusion', 'C2f_Faster', 'C2f_ODConv', 'C2f_Faster_EMA', 'C2f_DBB',
+__all__ = ['DyHeadBlock', 'Fusion', 'C2f_Faster', 'C2f_ODConv', 'Partial_conv3', 'C2f_Faster_EMA', 'C2f_DBB',
            'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
            'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA', 'C3_KW', 'C2f_KW',
            'C3_DySnakeConv', 'C2f_DySnakeConv']
@@ -296,7 +296,7 @@ class Fusion(nn.Module):
 
 from timm.models.layers import DropPath
 class Partial_conv3(nn.Module):
-    def __init__(self, dim, n_div, forward):
+    def __init__(self, dim, n_div=4, forward='split_cat'):
         super().__init__()
         self.dim_conv3 = dim // n_div
         self.dim_untouched = dim - self.dim_conv3
@@ -824,8 +824,8 @@ class GroupBatchnorm2d(nn.Module):
         super(GroupBatchnorm2d,self).__init__()
         assert c_num    >= group_num
         self.group_num  = group_num
-        self.gamma      = nn.Parameter( torch.randn(c_num, 1, 1)    )
-        self.beta       = nn.Parameter( torch.zeros(c_num, 1, 1)    )
+        self.gamma      = nn.Parameter(torch.randn(c_num, 1, 1))
+        self.beta       = nn.Parameter(torch.zeros(c_num, 1, 1))
         self.eps        = eps
 
     def forward(self, x):
