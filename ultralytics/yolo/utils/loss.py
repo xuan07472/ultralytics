@@ -171,12 +171,16 @@ class v8DetectionLoss:
         self.use_dfl = m.reg_max > 1
 
         self.assigner = TaskAlignedAssigner(topk=10, num_classes=self.nc, alpha=0.5, beta=6.0)
+        if hasattr(m, 'dfl_aux'):
+            self.assigner_aux = TaskAlignedAssigner(topk=13, num_classes=self.nc, alpha=0.5, beta=6.0)
+            self.bbox_loss_aux = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
+            self.aux_loss_ratio = 0.25
         # self.assigner = ATSSAssigner(9, num_classes=self.nc)
         self.bbox_loss = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
         self.proj = torch.arange(m.reg_max, dtype=torch.float, device=device)
         
         self.grid_cell_offset = 0.5
-        self.fpn_strides = [8, 16, 32]
+        self.fpn_strides = list(self.stride.detach().cpu().numpy())
         self.grid_cell_size = 5.0
 
     def preprocess(self, targets, batch_size, scale_tensor):
@@ -206,15 +210,22 @@ class v8DetectionLoss:
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
     def __call__(self, preds, batch):
+        base_loss, batch_size = self.compute_loss(preds, batch)
+        if hasattr(self, 'assigner_aux'):
+            aux_loss, _ = self.compute_loss_aux(preds, batch)
+            base_loss[0] += aux_loss[0] * self.aux_loss_ratio
+            base_loss[1] += aux_loss[1] * self.aux_loss_ratio
+            base_loss[2] += aux_loss[2] * self.aux_loss_ratio
+        return base_loss.sum() * batch_size, base_loss.detach()
+
+    def compute_loss(self, preds, batch):
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
         feats = preds[1] if isinstance(preds, tuple) else preds
+        feats = feats[:self.stride.size(0)]
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split(
             (self.reg_max * 4, self.nc), 1)
 
-        anchors, anchor_points, n_anchors_list, stride_tensor = \
-               generate_anchors(feats, self.fpn_strides, self.grid_cell_size, self.grid_cell_offset, device=feats[0].device)
-        
         pred_scores = pred_scores.permute(0, 2, 1).contiguous()
         pred_distri = pred_distri.permute(0, 2, 1).contiguous()
 
@@ -234,6 +245,8 @@ class v8DetectionLoss:
 
         # ATSS
         if isinstance(self.assigner, ATSSAssigner):
+            anchors, _, n_anchors_list, _ = \
+               generate_anchors(feats, self.fpn_strides, self.grid_cell_size, self.grid_cell_offset, device=feats[0].device)
             _, target_bboxes, target_scores, fg_mask, _ = self.assigner(anchors, n_anchors_list, gt_labels, gt_bboxes, mask_gt, pred_bboxes.detach() * stride_tensor)
         # TAL
         else:
@@ -261,10 +274,64 @@ class v8DetectionLoss:
         loss[0] *= self.hyp.box  # box gain
         loss[1] *= self.hyp.cls  # cls gain
         loss[2] *= self.hyp.dfl  # dfl gain
+        return loss, batch_size
+    
+    def compute_loss_aux(self, preds, batch):
+        """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
+        loss = torch.zeros(3, device=self.device)  # box, cls, dfl
+        feats_all = preds[1] if isinstance(preds, tuple) else preds
+        if len(feats_all) == self.stride.size(0):
+            return loss, 0
+        feats, feats_aux = feats_all[:self.stride.size(0)], feats_all[self.stride.size(0):]
+        
+        pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split((self.reg_max * 4, self.nc), 1)
+        pred_distri_aux, pred_scores_aux = torch.cat([xi.view(feats_aux[0].shape[0], self.no, -1) for xi in feats_aux], 2).split((self.reg_max * 4, self.nc), 1)
 
-        return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
+        pred_scores, pred_distri = pred_scores.permute(0, 2, 1).contiguous(), pred_distri.permute(0, 2, 1).contiguous()
+        pred_scores_aux, pred_distri_aux = pred_scores_aux.permute(0, 2, 1).contiguous(), pred_distri_aux.permute(0, 2, 1).contiguous()
 
+        dtype = pred_scores.dtype
+        batch_size = pred_scores.shape[0]
+        imgsz = torch.tensor(feats[0].shape[2:], device=self.device, dtype=dtype) * self.stride[0]  # image size (h,w)
+        anchor_points, stride_tensor = make_anchors(feats, self.stride, 0.5)
 
+        # targets
+        targets = torch.cat((batch['batch_idx'].view(-1, 1), batch['cls'].view(-1, 1), batch['bboxes']), 1)
+        targets = self.preprocess(targets.to(self.device), batch_size, scale_tensor=imgsz[[1, 0, 1, 0]])
+        gt_labels, gt_bboxes = targets.split((1, 4), 2)  # cls, xyxy
+        mask_gt = gt_bboxes.sum(2, keepdim=True).gt_(0)
+
+        # pboxes
+        pred_bboxes = self.bbox_decode(anchor_points, pred_distri)
+        pred_bboxes_aux = self.bbox_decode(anchor_points, pred_distri_aux)  # xyxy, (b, h*w, 4)
+
+        _, target_bboxes, target_scores, fg_mask, _ = self.assigner_aux(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+                anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt)
+
+        target_scores_sum = max(target_scores.sum(), 1)
+
+        # cls loss
+        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
+        if isinstance(self.bce, nn.BCEWithLogitsLoss):
+            loss[1] = self.bce(pred_scores_aux, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+
+        # bbox loss
+        if fg_mask.sum():
+            target_bboxes /= stride_tensor
+            loss[0], loss[2] = self.bbox_loss_aux(pred_distri_aux, pred_bboxes_aux, anchor_points, target_bboxes, target_scores,
+                                            target_scores_sum, fg_mask, feats_aux[0].shape[0] ** 2 + feats_aux[0].shape[1] ** 2)
+
+        if isinstance(self.bce, (EMASlideLoss, SlideLoss)):
+            auto_iou = bbox_iou(pred_bboxes_aux[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True).mean()
+            loss[1] = self.bce(pred_scores_aux, target_scores.to(dtype), auto_iou).sum() / target_scores_sum  # BCE
+        
+        loss[0] *= self.hyp.box  # box gain
+        loss[1] *= self.hyp.cls  # cls gain
+        loss[2] *= self.hyp.dfl  # dfl gain
+
+        # return loss.sum() * batch_size, loss.detach()  # loss(box, cls, dfl)
+        return loss, batch_size
+    
 # Criterion class for computing training losses
 class v8SegmentationLoss(v8DetectionLoss):
 

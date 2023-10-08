@@ -473,7 +473,10 @@ class YOLO:
             inputs = torch.randn((2, 3, imgsz, imgsz))
         else:
             inputs = torch.randn((2, 3, imgsz[0], imgsz[1]))
-        return self.model.predict(inputs, profile=True)
+        if next(self.model.parameters()).device.type == 'cuda':
+            return self.model.predict(inputs.to(torch.device('cuda')), profile=True)
+        else:
+            self.model.predict(inputs, profile=True)
     
     @property
     def names(self):
