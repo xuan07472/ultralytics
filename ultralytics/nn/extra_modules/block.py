@@ -17,8 +17,7 @@ __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Fa
            'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
            'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA', 'C3_KW', 'C2f_KW',
            'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3', 'FocalModulation',
-           'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'EMSConv_OREPA', 'EMSConvP_OREPA', 'C3_EMSC_OREPA', 'C2f_EMSC_OREPA',
-           'C3_EMSCP_OREPA', 'C2f_EMSCP_OREPA']
+           'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -563,7 +562,8 @@ class Attention(nn.Module):
                 nn.init.constant_(m.bias, 0)
 
     def update_temperature(self, temperature):
-        self.temperature = temperature
+        # self.temperature = temperature
+        pass
 
     @staticmethod
     def skip(_):
@@ -628,7 +628,8 @@ class ODConv2d(nn.Module):
             nn.init.kaiming_normal_(self.weight[i], mode='fan_out', nonlinearity='relu')
 
     def update_temperature(self, temperature):
-        self.attention.update_temperature(temperature)
+        # self.attention.update_temperature(temperature)
+        pass
 
     def _forward_impl_common(self, x):
         # Multiplying channel attention (or filter attention) to weights and feature maps are equivalent,
@@ -1532,98 +1533,3 @@ class C2f_REPVGGOREPA(C2f):
         self.m = nn.ModuleList(Bottleneck_REPVGGOREPA(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
 ######################################## C3 C2f RepVGG-OREPA end ########################################
-
-######################################## EMSConv+EMSConvP begin ########################################
-
-class EMSConv_OREPA(nn.Module):
-    # Efficient Multi-Scale Conv With OREPA
-    def __init__(self, channel=256, kernels=[3, 5]):
-        super().__init__()
-        self.groups = len(kernels)
-        min_ch = channel // 4
-        assert min_ch >= 16, f'channel must Greater than {64}, but {channel}'
-        
-        self.convs = nn.ModuleList([])
-        for ks in kernels:
-            if ks == 1:
-                self.convs.append(Conv(min_ch, min_ch))
-            elif ks in [3, 5]:
-                self.convs.append(OREPA(min_ch, min_ch, ks))
-            else:
-                self.convs.append(OREPA_LargeConv(min_ch, min_ch, ks))
-        self.conv_1x1 = Conv(channel, channel)
-        
-    def forward(self, x):
-        _, c, _, _ = x.size()
-        x_cheap, x_group = torch.split(x, [c // 2, c // 2], dim=1)
-        x_group = rearrange(x_group, 'bs (g ch) h w -> bs ch h w g', g=self.groups)
-        x_group = torch.stack([self.convs[i](x_group[..., i]) for i in range(len(self.convs))])
-        x_group = rearrange(x_group, 'g bs ch h w -> bs (g ch) h w')
-        x = torch.cat([x_cheap, x_group], dim=1)
-        x = self.conv_1x1(x)
-        
-        return x
-
-class EMSConvP_OREPA(nn.Module):
-    # Efficient Multi-Scale Conv Plus With OREPA
-    def __init__(self, channel=256, kernels=[1, 3, 5, 7]):
-        super().__init__()
-        self.groups = len(kernels)
-        min_ch = channel // self.groups
-        assert min_ch >= 16, f'channel must Greater than {16 * self.groups}, but {channel}'
-        
-        self.convs = nn.ModuleList([])
-        for ks in kernels:
-            if ks == 1:
-                self.convs.append(Conv(min_ch, min_ch))
-            elif ks in [3, 5]:
-                self.convs.append(OREPA(min_ch, min_ch, ks))
-            else:
-                self.convs.append(OREPA_LargeConv(min_ch, min_ch, ks))
-        self.conv_1x1 = Conv(channel, channel, 1)
-        
-    def forward(self, x):
-        x_group = rearrange(x, 'bs (g ch) h w -> bs ch h w g', g=self.groups)
-        x_convs = torch.stack([self.convs[i](x_group[..., i]) for i in range(len(self.convs))])
-        x_convs = rearrange(x_convs, 'g bs ch h w -> bs (g ch) h w')
-        x_convs = self.conv_1x1(x_convs)
-        
-        return x_convs
-
-class Bottleneck_EMSC_OREPA(Bottleneck):
-    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
-        super().__init__(c1, c2, shortcut, g, k, e)
-        c_ = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, k[0], 1)
-        self.cv2 = EMSConv_OREPA(c2)
-
-class C3_EMSC_OREPA(C3):
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
-        super().__init__(c1, c2, n, shortcut, g, e)
-        c_ = int(c2 * e)  # hidden channels
-        self.m = nn.Sequential(*(Bottleneck_EMSC_OREPA(c_, c_, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
-
-class C2f_EMSC_OREPA(C2f):
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
-        super().__init__(c1, c2, n, shortcut, g, e)
-        self.m = nn.ModuleList(Bottleneck_EMSC_OREPA(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
-
-class Bottleneck_EMSCP_OREPA(Bottleneck):
-    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
-        super().__init__(c1, c2, shortcut, g, k, e)
-        c_ = int(c2 * e)  # hidden channels
-        self.cv1 = Conv(c1, c_, k[0], 1)
-        self.cv2 = EMSConvP_OREPA(c2)
-
-class C3_EMSCP_OREPA(C3):
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
-        super().__init__(c1, c2, n, shortcut, g, e)
-        c_ = int(c2 * e)  # hidden channels
-        self.m = nn.Sequential(*(Bottleneck_EMSCP_OREPA(c_, c_, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
-
-class C2f_EMSCP_OREPA(C2f):
-    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
-        super().__init__(c1, c2, n, shortcut, g, e)
-        self.m = nn.ModuleList(Bottleneck_EMSCP_OREPA(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
-
-######################################## EMSConv+EMSConvP end ########################################

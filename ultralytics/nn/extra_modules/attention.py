@@ -9,7 +9,7 @@ import numpy as np
 from einops import rearrange
 from torch import Tensor
 from typing import Tuple, Optional, List
-from ..modules import Conv
+from ..modules.conv import Conv, autopad
 
 __all__ = ['EMA', 'SimAM', 'SpatialGroupEnhance', 'BiLevelRoutingAttention', 'BiLevelRoutingAttention_nchw', 'TripletAttention', 
            'CoordAtt', 'BAMBlock', 'EfficientAttention', 'LSKBlock', 'SEAttention', 'CPCA']
@@ -712,7 +712,7 @@ class SpatialAttention(nn.Module):
         self.sa.add_module('relu_reduce1', nn.ReLU())
         for i in range(num_layers):
             self.sa.add_module('conv_%d' % i, nn.Conv2d(kernel_size=3, in_channels=channel // reduction,
-                                                        out_channels=channel // reduction, padding=1, dilation=dia_val))
+                                                        out_channels=channel // reduction, padding=autopad(3, None, dia_val), dilation=dia_val))
             self.sa.add_module('bn_%d' % i, nn.BatchNorm2d(channel // reduction))
             self.sa.add_module('relu_%d' % i, nn.ReLU())
         self.sa.add_module('last_conv', nn.Conv2d(channel // reduction, 1, kernel_size=1))

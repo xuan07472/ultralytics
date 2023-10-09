@@ -37,5 +37,5 @@
 
 链接：https://pan.baidu.com/s/1bNP9cf2K024c7XWgpNAEwQ?pwd=97if 
 提取码：97if 
-1.关于OREPA,REPVGGOREPA,EMSC-OREPA,EMSCP-OREPA的说明
+1.关于OREPA,REPVGGOREPA,EMSC-OREPA,EMSCP-OREPA的说明(视频中的EMSC-OREPA和EMSCP-OREPA模块经反应不稳定,已在后面版本去除)
 2.该如何看懂代码结构,以C2f-Faster-EMA为例
