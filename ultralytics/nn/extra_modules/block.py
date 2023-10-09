@@ -1487,11 +1487,10 @@ class Bottleneck_OREPA(Bottleneck):
         super().__init__(c1, c2, shortcut, g, k, e)
         c_ = int(c2 * e)  # hidden channels
         if k[0] == 1:
-            self.cv1 = OREPA_1x1(c1, c_)
+            self.cv1 = Conv(c1, c_)
         else:
-            self.cv1 = OREPA(c1, c_, 3)
-        
-        self.cv2 = OREPA(c_, c2, 3, groups=g)
+            self.cv1 = OREPA(c1, c_, k[0])
+        self.cv2 = OREPA(c_, c2, k[1], groups=g)
 
 class C3_OREPA(C3):
     def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
@@ -1547,12 +1546,12 @@ class EMSConv_OREPA(nn.Module):
         self.convs = nn.ModuleList([])
         for ks in kernels:
             if ks == 1:
-                self.convs.append(OREPA_1x1(min_ch, min_ch))
-            elif ks == 3 or ks == 5:
+                self.convs.append(Conv(min_ch, min_ch))
+            elif ks in [3, 5]:
                 self.convs.append(OREPA(min_ch, min_ch, ks))
             else:
-                self.convs.append(OREPA_LargeConv(c1=min_ch, c2=min_ch, k=ks))
-        self.conv_1x1 = OREPA_1x1(channel, channel)
+                self.convs.append(OREPA_LargeConv(min_ch, min_ch, ks))
+        self.conv_1x1 = Conv(channel, channel)
         
     def forward(self, x):
         _, c, _, _ = x.size()
@@ -1576,12 +1575,12 @@ class EMSConvP_OREPA(nn.Module):
         self.convs = nn.ModuleList([])
         for ks in kernels:
             if ks == 1:
-                self.convs.append(OREPA_1x1(min_ch, min_ch))
-            elif ks == 3 or ks == 5:
+                self.convs.append(Conv(min_ch, min_ch))
+            elif ks in [3, 5]:
                 self.convs.append(OREPA(min_ch, min_ch, ks))
             else:
                 self.convs.append(OREPA_LargeConv(min_ch, min_ch, ks))
-        self.conv_1x1 = OREPA_1x1(channel, channel, 1)
+        self.conv_1x1 = Conv(channel, channel, 1)
         
     def forward(self, x):
         x_group = rearrange(x, 'bs (g ch) h w -> bs ch h w g', g=self.groups)

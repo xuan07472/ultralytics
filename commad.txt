@@ -23,7 +23,8 @@ python train.py --yaml ultralytics/models/v8/yolov8-C2f-EMSCP.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-DCNV2.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-DCNV3.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-RCSOSA.yaml --info
-python train.py --yaml ultralytics/models/v8/yolov8-C2f-OREPA.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-fasternet-bifpn.yaml --info
+
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-REPVGGOREPA.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-KernelWarehouse.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-FocalModulation.yaml --info
@@ -66,6 +67,7 @@ python train.py --yaml ultralytics/models/v5/yolov5-swintransformer.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-repvit.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSC-OREPA.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSCP-OREPA.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-fasternet-bifpn.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345-Custom.yaml --info
@@ -109,4 +111,4 @@ python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n-timm.ya
 CUDA_VISIBLE_DEVICES=0 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8-EfficientFormerV2.yaml --data /root/public_dataset/dataset_crowdhuman/data.yaml --workers 8 --batch 32 --cache --epochs 20 --name exp --fraction 0.2
 CUDA_VISIBLE_DEVICES=0 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8.yaml --data /root/public_dataset/dataset_crowdhuman/data.yaml --workers 8 --batch 32 --cache --epochs 20 --name exp --fraction 0.2
 CUDA_VISIBLE_DEVICES=0 python val.py --weight runs/train/exp/weights/best.pt --data /root/public_dataset/dataset_crowdhuman/data.yaml --batch 16
-CUDA_VISIBLE_DEVICES=0 python detect.py --weight runs/train/exp/weights/best.pt --source /root/public_dataset/dataset_crowdhuman/images/test/
+CUDA_VISIBLE_DEVICES=0 python detect.py --weight runs/train/exp/weights/best.pt --source /root/public_dataset/dataset_crowdhuman/images/test/python train.py --yaml ultralytics/models/v8/yolov8-C2f-OREPA.yaml --info

@@ -6,7 +6,7 @@ import numpy as np
 from ..modules.conv import autopad, Conv
 from .attention import SEAttention
 
-__all__ = ['OREPA_1x1', 'OREPA', 'OREPA_LargeConv', 'RepVGGBlock_OREPA']
+__all__ = ['OREPA', 'OREPA_LargeConv', 'RepVGGBlock_OREPA']
 
 def transI_fusebn(kernel, bn):
     gamma = bn.weight
@@ -17,101 +17,6 @@ def transVI_multiscale(kernel, target_kernel_size):
     H_pixels_to_pad = (target_kernel_size - kernel.size(2)) // 2
     W_pixels_to_pad = (target_kernel_size - kernel.size(3)) // 2
     return F.pad(kernel, [W_pixels_to_pad, W_pixels_to_pad, H_pixels_to_pad, H_pixels_to_pad])
-
-class OREPA_1x1(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel_size=1,
-                 stride=1, padding=None, groups=1, dilation=1, act=True,
-                 deploy=False, single_init=False):
-        super(OREPA_1x1, self).__init__()
-        self.deploy = deploy
-
-        self.nonlinear = Conv.default_act if act is True else act if isinstance(act, nn.Module) else nn.Identity()
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.groups = groups
-        padding = autopad(kernel_size, padding, dilation)
-        assert groups == 1
-        assert kernel_size == 1
-
-        self.kernel_size = kernel_size
-        self.stride = stride
-        self.padding = padding
-        self.dilation = dilation
-
-        if deploy:
-            self.or1x1_reparam = nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=kernel_size, stride=stride,
-                                      padding=padding, dilation=dilation, groups=groups, bias=True)
-
-        else: 
-            self.branch_counter = 0
-
-            self.weight_or1x1_origin = nn.Parameter(torch.Tensor(out_channels, in_channels, 1, 1))
-            init.kaiming_uniform_(self.weight_or1x1_origin, a=math.sqrt(1.0))
-            self.branch_counter += 1
-    
-            if out_channels > in_channels:
-                self.weight_or1x1_l2i_conv1 = nn.Parameter(torch.eye(in_channels).unsqueeze(2).unsqueeze(3))
-                self.weight_or1x1_l2i_conv2 = nn.Parameter(torch.Tensor(out_channels, in_channels, 1, 1))
-                init.kaiming_uniform_(self.weight_or1x1_l2i_conv2, a=math.sqrt(1.0))
-            else:
-                self.weight_or1x1_l2i_conv1 = nn.Parameter(torch.Tensor(out_channels, in_channels, 1, 1))
-                init.kaiming_uniform_(self.weight_or1x1_l2i_conv1, a=math.sqrt(1.0))
-                self.weight_or1x1_l2i_conv2 = nn.Parameter(torch.eye(out_channels).unsqueeze(2).unsqueeze(3))
-            self.branch_counter += 1
-
-            self.vector = nn.Parameter(torch.Tensor(self.branch_counter, self.out_channels))
-            self.bn = nn.BatchNorm2d(self.out_channels)
-
-            init.constant_(self.vector[0, :], 1.0)
-            init.constant_(self.vector[1, :], 0.5)      
-
-            if single_init:
-                #   Initialize the vector.weight of origin as 1 and others as 0. This is not the default setting.
-                self.single_init()  
-
-    def weight_gen(self):
-
-        weight_or1x1_origin = torch.einsum('oihw,o->oihw', self.weight_or1x1_origin, self.vector[0, :])
-        weight_or1x1_l2i = torch.einsum('tihw,othw->oihw', self.weight_or1x1_l2i_conv1, self.weight_or1x1_l2i_conv2)
-        weight_or1x1_l2i = torch.einsum('oihw,o->oihw', weight_or1x1_l2i, self.vector[1, :])
-
-        return weight_or1x1_origin + weight_or1x1_l2i
-
-    def forward(self, inputs):
-        if hasattr(self, 'or1x1_reparam'):
-            return self.nonlinear(self.or1x1_reparam(inputs))
-
-        weight = self.weight_gen()
-        out = F.conv2d(inputs, weight, bias=None, stride=self.stride, padding=self.padding, dilation=self.dilation, groups=self.groups)
-        return self.nonlinear(self.bn(out))
-
-    def get_equivalent_kernel_bias(self):
-        return transI_fusebn(self.weight_gen(), self.bn)
-
-    def switch_to_deploy(self):
-        if hasattr(self, 'or1x1_reparam'):
-            return
-        kernel, bias = self.get_equivalent_kernel_bias()
-        self.or1x1_reparam = nn.Conv2d(in_channels=self.in_channels, out_channels=self.out_channels,
-                                     kernel_size=self.kernel_size, stride=self.stride,
-                                     padding=self.padding, dilation=self.dilation, groups=self.groups, bias=True)
-        self.or1x1_reparam.weight.data = kernel
-        self.or1x1_reparam.bias.data = bias
-        for para in self.parameters():
-            para.detach_()
-        self.__delattr__('weight_or1x1_origin')
-        self.__delattr__('weight_or1x1_l2i_conv1')
-        self.__delattr__('weight_or1x1_l2i_conv2')
-        self.__delattr__('vector')
-        self.__delattr__('bn')
-
-    def init_gamma(self, gamma_value):
-        init.constant_(self.vector, gamma_value)
-
-    def single_init(self):
-        self.init_gamma(0.0)
-        init.constant_(self.vector[0, :], 1.0)
 
 class OREPA(nn.Module):
     def __init__(self,
