@@ -30,3 +30,7 @@
 链接：https://pan.baidu.com/s/1a7s7Jur3Js7F-i4QtYFuFA?pwd=4brn 
 提取码：4brn 
 1.DCNV2,DCNV3,DyHeadWithDCNV3相关讲解
+
+链接：https://pan.baidu.com/s/1mOWcDwp64D7G0qEV0RZUJA?pwd=3awi 
+提取码：3awi 
+1.关于C3-XXX和C2f-XXX移植到官方yolov5上的讲解

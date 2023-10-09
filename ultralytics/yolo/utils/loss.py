@@ -51,7 +51,7 @@ class EMASlideLoss:
         self.iou_mean = 1.0
     
     def __call__(self, pred, true, auto_iou=0.5):
-        if self.is_train:
+        if self.is_train and auto_iou != -1:
             self.updates += 1
             d = self.decay(self.updates)
             self.iou_mean = d * self.iou_mean + (1 - d) * float(auto_iou.detach())
@@ -173,7 +173,6 @@ class v8DetectionLoss:
         self.assigner = TaskAlignedAssigner(topk=10, num_classes=self.nc, alpha=0.5, beta=6.0)
         if hasattr(m, 'dfl_aux'):
             self.assigner_aux = TaskAlignedAssigner(topk=13, num_classes=self.nc, alpha=0.5, beta=6.0)
-            self.bbox_loss_aux = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
             self.aux_loss_ratio = 0.25
         # self.assigner = ATSSAssigner(9, num_classes=self.nc)
         self.bbox_loss = BboxLoss(m.reg_max - 1, use_dfl=self.use_dfl).to(device)
@@ -210,13 +209,11 @@ class v8DetectionLoss:
         return dist2bbox(pred_dist, anchor_points, xywh=False)
 
     def __call__(self, preds, batch):
-        base_loss, batch_size = self.compute_loss(preds, batch)
         if hasattr(self, 'assigner_aux'):
-            aux_loss, _ = self.compute_loss_aux(preds, batch)
-            base_loss[0] += aux_loss[0] * self.aux_loss_ratio
-            base_loss[1] += aux_loss[1] * self.aux_loss_ratio
-            base_loss[2] += aux_loss[2] * self.aux_loss_ratio
-        return base_loss.sum() * batch_size, base_loss.detach()
+            loss, batch_size = self.compute_loss_aux(preds, batch)
+        else:
+            loss, batch_size = self.compute_loss(preds, batch)
+        return loss.sum() * batch_size, loss.detach()
 
     def compute_loss(self, preds, batch):
         """Calculate the sum of the loss for box, cls and dfl multiplied by batch size."""
@@ -281,7 +278,7 @@ class v8DetectionLoss:
         loss = torch.zeros(3, device=self.device)  # box, cls, dfl
         feats_all = preds[1] if isinstance(preds, tuple) else preds
         if len(feats_all) == self.stride.size(0):
-            return loss, 0
+            return self.compute_loss(preds, batch)
         feats, feats_aux = feats_all[:self.stride.size(0)], feats_all[self.stride.size(0):]
         
         pred_distri, pred_scores = torch.cat([xi.view(feats[0].shape[0], self.no, -1) for xi in feats], 2).split((self.reg_max * 4, self.nc), 1)
@@ -305,25 +302,36 @@ class v8DetectionLoss:
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)
         pred_bboxes_aux = self.bbox_decode(anchor_points, pred_distri_aux)  # xyxy, (b, h*w, 4)
 
-        _, target_bboxes, target_scores, fg_mask, _ = self.assigner_aux(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+        _, target_bboxes, target_scores, fg_mask, _ = self.assigner(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+                anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt)
+        _, target_bboxes_aux, target_scores_aux, fg_mask_aux, _ = self.assigner_aux(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
                 anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt)
 
         target_scores_sum = max(target_scores.sum(), 1)
+        target_scores_sum_aux = max(target_scores_aux.sum(), 1)
 
         # cls loss
         # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
         if isinstance(self.bce, nn.BCEWithLogitsLoss):
-            loss[1] = self.bce(pred_scores_aux, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+            loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+            loss[1] += self.bce(pred_scores_aux, target_scores_aux.to(dtype)).sum() / target_scores_sum_aux * self.aux_loss_ratio  # BCE
 
         # bbox loss
         if fg_mask.sum():
             target_bboxes /= stride_tensor
-            loss[0], loss[2] = self.bbox_loss_aux(pred_distri_aux, pred_bboxes_aux, anchor_points, target_bboxes, target_scores,
-                                            target_scores_sum, fg_mask, feats_aux[0].shape[0] ** 2 + feats_aux[0].shape[1] ** 2)
+            target_bboxes_aux /= stride_tensor
+            loss[0], loss[2] = self.bbox_loss(pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores,
+                                            target_scores_sum, fg_mask, feats[0].shape[0] ** 2 + feats[0].shape[1] ** 2)
+            aux_loss_0, aux_loss_2 = self.bbox_loss(pred_distri_aux, pred_bboxes_aux, anchor_points, target_bboxes_aux, target_scores_aux,
+                                            target_scores_sum_aux, fg_mask_aux, feats_aux[0].shape[0] ** 2 + feats_aux[0].shape[1] ** 2)
+            
+            loss[0] += aux_loss_0 * self.aux_loss_ratio
+            loss[2] += aux_loss_2 * self.aux_loss_ratio
 
         if isinstance(self.bce, (EMASlideLoss, SlideLoss)):
-            auto_iou = bbox_iou(pred_bboxes_aux[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True).mean()
-            loss[1] = self.bce(pred_scores_aux, target_scores.to(dtype), auto_iou).sum() / target_scores_sum  # BCE
+            auto_iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True).mean()
+            loss[1] = self.bce(pred_scores, target_scores.to(dtype), auto_iou).sum() / target_scores_sum  # BCE
+            loss[1] += self.bce(pred_scores_aux, target_scores_aux.to(dtype), -1).sum() / target_scores_sum_aux * self.aux_loss_ratio  # BCE
         
         loss[0] *= self.hyp.box  # box gain
         loss[1] *= self.hyp.cls  # cls gain
