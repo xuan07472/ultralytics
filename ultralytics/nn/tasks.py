@@ -24,6 +24,8 @@ from ultralytics.nn.backbone.EfficientFormerV2 import *
 from ultralytics.nn.backbone.VanillaNet import *
 from ultralytics.nn.backbone.revcol import *
 from ultralytics.nn.backbone.lsknet import *
+from ultralytics.nn.backbone.SwinTransformer import *
+from ultralytics.nn.backbone.repvit import *
 
 try:
     import thop
@@ -285,6 +287,8 @@ class DetectionModel(BaseModel):
                 if 'Not implemented on the CPU' in str(e):
                     self.model.to(torch.device('cuda'))
                     m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(2, ch, s, s).to(torch.device('cuda')))])  # forward
+                else:
+                    raise e
             self.stride = m.stride
             m.bias_init()  # only run once
 
@@ -697,7 +701,9 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                  BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3, C2f_Faster, C2f_ODConv,
                  C2f_Faster_EMA, C2f_DBB, GSConv, VoVGSCSP, VoVGSCSPC, C2f_CloAtt, C3_CloAtt, SCConv, C2f_SCConv, C3_SCConv, C2f_ScConv, C3_ScConv,
                  C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, KWConv, C2f_KW, C3_KW, DySnakeConv, C2f_DySnakeConv, C3_DySnakeConv,
-                 DCNv2, C3_DCNv2, C2f_DCNv2, DCNV3_YOLO, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv):
+                 DCNv2, C3_DCNv2, C2f_DCNv2, DCNV3_YOLO, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv,
+                 OREPA_1x1, OREPA, OREPA_LargeConv, RepVGGBlock_OREPA, C3_OREPA, C2f_OREPA, C3_DBB, C3_REPVGGOREPA, C2f_REPVGGOREPA,
+                 C3_EMSC_OREPA, C2f_EMSC_OREPA, C3_EMSCP_OREPA, C2f_EMSCP_OREPA):
             if args[0] == 'head_channel':
                 args[0] = d[args[0]]
             c1, c2 = ch[f], args[0]
@@ -714,7 +720,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
             if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3, C2f_Faster, C2f_ODConv, C2f_Faster_EMA, C2f_DBB,
                      VoVGSCSP, VoVGSCSPC, C2f_CloAtt, C3_CloAtt, C2f_SCConv, C3_SCConv, C2f_ScConv, C3_ScConv,
                      C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, C2f_KW, C3_KW, C2f_DySnakeConv, C3_DySnakeConv,
-                     C3_DCNv2, C2f_DCNv2, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv):
+                     C3_DCNv2, C2f_DCNv2, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv, C3_OREPA, C2f_OREPA, C3_DBB,
+                     C3_REPVGGOREPA, C2f_REPVGGOREPA, C3_EMSC_OREPA, C2f_EMSC_OREPA, C3_EMSCP_OREPA, C2f_EMSCP_OREPA):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
@@ -748,7 +755,9 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                    efficientformerv2_s0, efficientformerv2_s1, efficientformerv2_s2, efficientformerv2_l,
                    vanillanet_5, vanillanet_6, vanillanet_7, vanillanet_8, vanillanet_9, vanillanet_10, vanillanet_11, vanillanet_12, vanillanet_13, vanillanet_13_x1_5, vanillanet_13_x1_5_ada_pool,
                    RevCol,
-                   lsknet_t, lsknet_s
+                   lsknet_t, lsknet_s,
+                   SwinTransformer_Tiny,
+                   repvit_m1, repvit_m2, repvit_m3
                    }:
             if m is RevCol:
                 args[1] = [make_divisible(min(k, max_channels) * width, 8) for k in args[1]]
@@ -757,7 +766,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
             c2 = m.channel
         elif m in {EMA, SpatialAttention, BiLevelRoutingAttention, BiLevelRoutingAttention_nchw,
                    TripletAttention, CoordAtt, CBAM, BAMBlock, LSKBlock, ScConv, LAWDS, EMSConv, EMSConvP,
-                   SEAttention, CPCA, Partial_conv3}:
+                   SEAttention, CPCA, Partial_conv3, FocalModulation}:
             c2 = ch[f]
             args = [c2, *args]
             # print(args)

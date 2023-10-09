@@ -227,6 +227,7 @@ def get_flops(model, imgsz=640):
         imgsz = imgsz if isinstance(imgsz, list) else [imgsz, imgsz]  # expand if int/float
         return flops * imgsz[0] / stride * imgsz[1] / stride  # 640x640 GFLOPs
     except Exception as e:
+        print(e)
         return 0
 
 
@@ -319,21 +320,13 @@ def init_seeds(seed=0, deterministic=False):
     torch.cuda.manual_seed_all(seed)  # for Multi-GPU, exception safe
     # torch.backends.cudnn.benchmark = True  # AutoBatch problem https://github.com/ultralytics/yolov5/issues/9287
     if deterministic:  # https://github.com/ultralytics/yolov5/pull/8213
-        try:
+        if TORCH_1_12:
             torch.use_deterministic_algorithms(True)
             torch.backends.cudnn.deterministic = True
             os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
             os.environ['PYTHONHASHSEED'] = str(seed)
-        except:
-            pass
-        
-        # if TORCH_2_0:
-        #     torch.use_deterministic_algorithms(True)
-        #     torch.backends.cudnn.deterministic = True
-        #     os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'
-        #     os.environ['PYTHONHASHSEED'] = str(seed)
-        # else:
-        #     LOGGER.warning('WARNING ⚠️ Upgrade to torch>=2.0.0 for deterministic training.')
+        else:
+            LOGGER.warning('WARNING ⚠️ Upgrade to torch>=2.0.0 for deterministic training.')
 
 
 class ModelEMA:

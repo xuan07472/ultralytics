@@ -34,3 +34,7 @@
 链接：https://pan.baidu.com/s/1mOWcDwp64D7G0qEV0RZUJA?pwd=3awi 
 提取码：3awi 
 1.关于C3-XXX和C2f-XXX移植到官方yolov5上的讲解
+
+链接：https://pan.baidu.com/s/1pTmY7DSkKAgeHIbV7sUtSw?pwd=b9io 
+提取码：b9io 
+1.关于OREPA,EMSC-OREPA,EMSCP-OREPA的讲解

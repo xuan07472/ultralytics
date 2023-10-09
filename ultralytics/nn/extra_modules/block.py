@@ -10,12 +10,15 @@ from .rep_block import DiverseBranchBlock
 from .kernel_warehouse import KWConv
 from .dynamic_snake_conv import DySnakeConv
 from .ops_dcnv3.modules import DCNv3, DCNv3_DyHead
+from .orepa import *
 from ultralytics.yolo.utils.torch_utils import make_divisible
 
 __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Faster', 'C3_ODConv', 'C2f_ODConv', 'Partial_conv3', 'C2f_Faster_EMA', 'C3_Faster_EMA', 'C2f_DBB',
            'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
            'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA', 'C3_KW', 'C2f_KW',
-           'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3']
+           'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3', 'FocalModulation',
+           'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'EMSConv_OREPA', 'EMSConvP_OREPA', 'C3_EMSC_OREPA', 'C2f_EMSC_OREPA',
+           'C3_EMSCP_OREPA', 'C2f_EMSCP_OREPA']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -759,6 +762,12 @@ class C2f_DBB(C2f):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(Bottleneck_DBB(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
+class C3_DBB(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_DBB(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
 ######################################## C2f-DDB end ########################################
 
 ######################################## SlimNeck begin ########################################
@@ -1398,3 +1407,224 @@ class C2f_DCNv3(C2f):
         self.m = nn.ModuleList(Bottleneck_DCNV3(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
 ######################################## C3 C2f DCNV3 end ########################################
+
+######################################## FocalModulation start ########################################
+class FocalModulation(nn.Module):
+    def __init__(self, dim, focal_window=3, focal_level=2, focal_factor=2, bias=True, proj_drop=0., use_postln_in_modulation=False, normalize_modulator=False):
+        super().__init__()
+
+        self.dim = dim
+        self.focal_window = focal_window
+        self.focal_level = focal_level
+        self.focal_factor = focal_factor
+        self.use_postln_in_modulation = use_postln_in_modulation
+        self.normalize_modulator = normalize_modulator
+
+        self.f_linear = nn.Conv2d(dim, 2 * dim + (self.focal_level + 1), kernel_size=1, bias=bias)
+        self.h = nn.Conv2d(dim, dim, kernel_size=1, stride=1, bias=bias)
+
+        self.act = nn.GELU()
+        self.proj = nn.Conv2d(dim, dim, kernel_size=1)
+        self.proj_drop = nn.Dropout(proj_drop)
+        self.focal_layers = nn.ModuleList()
+                
+        self.kernel_sizes = []
+        for k in range(self.focal_level):
+            kernel_size = self.focal_factor * k + self.focal_window
+            self.focal_layers.append(
+                nn.Sequential(
+                    nn.Conv2d(dim, dim, kernel_size=kernel_size, stride=1, 
+                    groups=dim, padding=kernel_size//2, bias=False),
+                    nn.GELU(),
+                    )
+                )              
+            self.kernel_sizes.append(kernel_size)          
+        if self.use_postln_in_modulation:
+            self.ln = nn.LayerNorm(dim)
+
+    def forward(self, x):
+        """
+        Args:
+            x: input features with shape of (B, H, W, C)
+        """
+        C = x.shape[1]
+
+        # pre linear projection
+        x = self.f_linear(x).contiguous()
+        q, ctx, gates = torch.split(x, (C, C, self.focal_level+1), 1)
+        
+        # context aggreation
+        ctx_all = 0.0
+        for l in range(self.focal_level):         
+            ctx = self.focal_layers[l](ctx)
+            ctx_all = ctx_all + ctx * gates[:, l:l+1]
+        ctx_global = self.act(ctx.mean(2, keepdim=True).mean(3, keepdim=True))
+        ctx_all = ctx_all + ctx_global * gates[:, self.focal_level:]
+
+        # normalize context
+        if self.normalize_modulator:
+            ctx_all = ctx_all / (self.focal_level + 1)
+
+        # focal modulation
+        x_out = q * self.h(ctx_all)
+        x_out = x_out.contiguous()
+        if self.use_postln_in_modulation:
+            x_out = self.ln(x_out)
+        
+        # post linear porjection
+        x_out = self.proj(x_out)
+        x_out = self.proj_drop(x_out)
+        return x_out
+
+######################################## FocalModulation end ########################################
+
+######################################## C3 C2f OREPA start ########################################
+
+class Bottleneck_OREPA(Bottleneck):
+    """Standard bottleneck with OREPA."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        if k[0] == 1:
+            self.cv1 = OREPA_1x1(c1, c_)
+        else:
+            self.cv1 = OREPA(c1, c_, 3)
+        
+        self.cv2 = OREPA(c_, c2, 3, groups=g)
+
+class C3_OREPA(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_OREPA(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_OREPA(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_OREPA(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f OREPA end ########################################
+
+######################################## C3 C2f RepVGG-OREPA start ########################################
+
+class Bottleneck_REPVGGOREPA(Bottleneck):
+    """Standard bottleneck with DCNV2."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        if k[0] == 1:
+            self.cv1 = Conv(c1, c_, 1)
+        else:
+            self.cv1 = RepVGGBlock_OREPA(c1, c_, 3)
+        
+        self.cv2 = RepVGGBlock_OREPA(c_, c2, 3, groups=g)
+
+class C3_REPVGGOREPA(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_REPVGGOREPA(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_REPVGGOREPA(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_REPVGGOREPA(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f RepVGG-OREPA end ########################################
+
+######################################## EMSConv+EMSConvP begin ########################################
+
+class EMSConv_OREPA(nn.Module):
+    # Efficient Multi-Scale Conv With OREPA
+    def __init__(self, channel=256, kernels=[3, 5]):
+        super().__init__()
+        self.groups = len(kernels)
+        min_ch = channel // 4
+        assert min_ch >= 16, f'channel must Greater than {64}, but {channel}'
+        
+        self.convs = nn.ModuleList([])
+        for ks in kernels:
+            if ks == 1:
+                self.convs.append(OREPA_1x1(min_ch, min_ch))
+            elif ks == 3 or ks == 5:
+                self.convs.append(OREPA(min_ch, min_ch, ks))
+            else:
+                self.convs.append(OREPA_LargeConv(c1=min_ch, c2=min_ch, k=ks))
+        self.conv_1x1 = OREPA_1x1(channel, channel)
+        
+    def forward(self, x):
+        _, c, _, _ = x.size()
+        x_cheap, x_group = torch.split(x, [c // 2, c // 2], dim=1)
+        x_group = rearrange(x_group, 'bs (g ch) h w -> bs ch h w g', g=self.groups)
+        x_group = torch.stack([self.convs[i](x_group[..., i]) for i in range(len(self.convs))])
+        x_group = rearrange(x_group, 'g bs ch h w -> bs (g ch) h w')
+        x = torch.cat([x_cheap, x_group], dim=1)
+        x = self.conv_1x1(x)
+        
+        return x
+
+class EMSConvP_OREPA(nn.Module):
+    # Efficient Multi-Scale Conv Plus With OREPA
+    def __init__(self, channel=256, kernels=[1, 3, 5, 7]):
+        super().__init__()
+        self.groups = len(kernels)
+        min_ch = channel // self.groups
+        assert min_ch >= 16, f'channel must Greater than {16 * self.groups}, but {channel}'
+        
+        self.convs = nn.ModuleList([])
+        for ks in kernels:
+            if ks == 1:
+                self.convs.append(OREPA_1x1(min_ch, min_ch))
+            elif ks == 3 or ks == 5:
+                self.convs.append(OREPA(min_ch, min_ch, ks))
+            else:
+                self.convs.append(OREPA_LargeConv(min_ch, min_ch, ks))
+        self.conv_1x1 = OREPA_1x1(channel, channel, 1)
+        
+    def forward(self, x):
+        x_group = rearrange(x, 'bs (g ch) h w -> bs ch h w g', g=self.groups)
+        x_convs = torch.stack([self.convs[i](x_group[..., i]) for i in range(len(self.convs))])
+        x_convs = rearrange(x_convs, 'g bs ch h w -> bs (g ch) h w')
+        x_convs = self.conv_1x1(x_convs)
+        
+        return x_convs
+
+class Bottleneck_EMSC_OREPA(Bottleneck):
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = EMSConv_OREPA(c2)
+
+class C3_EMSC_OREPA(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_EMSC_OREPA(c_, c_, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
+
+class C2f_EMSC_OREPA(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_EMSC_OREPA(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+class Bottleneck_EMSCP_OREPA(Bottleneck):
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = EMSConvP_OREPA(c2)
+
+class C3_EMSCP_OREPA(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_EMSCP_OREPA(c_, c_, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
+
+class C2f_EMSCP_OREPA(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_EMSCP_OREPA(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## EMSConv+EMSConvP end ########################################
