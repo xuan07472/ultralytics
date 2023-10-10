@@ -19,7 +19,8 @@ __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Fa
            'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA', 'C3_KW', 'C2f_KW',
            'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3', 'FocalModulation',
            'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'C3_DCNv2_Dynamic', 'C2f_DCNv2_Dynamic',
-           'SimFusion_3in', 'SimFusion_4in', 'IFM', 'InjectionMultiSum_Auto_pool', 'PyramidPoolAgg', 'AdvPoolFusion', 'TopBasicLayer']
+           'SimFusion_3in', 'SimFusion_4in', 'IFM', 'InjectionMultiSum_Auto_pool', 'PyramidPoolAgg', 'AdvPoolFusion', 'TopBasicLayer',
+           'C3_ContextGuided', 'C2f_ContextGuided', 'C3_MSBlock', 'C2f_MSBlock', 'ContextGuidedBlock_Down']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -2063,3 +2064,172 @@ class AdvPoolFusion(nn.Module):
         return torch.cat([x1, x2], 1)
 
 ######################################## GOLD-YOLO end ########################################
+
+######################################## ContextGuidedBlock start ########################################
+
+class FGlo(nn.Module):
+    """
+    the FGlo class is employed to refine the joint feature of both local feature and surrounding context.
+    """
+    def __init__(self, channel, reduction=16):
+        super(FGlo, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+                nn.Linear(channel, channel // reduction),
+                nn.ReLU(inplace=True),
+                nn.Linear(channel // reduction, channel),
+                nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x).view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y
+
+class ContextGuidedBlock(nn.Module):
+    def __init__(self, nIn, nOut, dilation_rate=2, reduction=16, add=True):
+        """
+        args:
+           nIn: number of input channels
+           nOut: number of output channels, 
+           add: if true, residual learning
+        """
+        super().__init__()
+        n= int(nOut/2)
+        self.conv1x1 = Conv(nIn, n, 1, 1)  #1x1 Conv is employed to reduce the computation
+        self.F_loc = nn.Conv2d(n, n, 3, padding=1, groups=n)
+        self.F_sur = nn.Conv2d(n, n, 3, padding=autopad(3, None, dilation_rate), dilation=dilation_rate, groups=n) # surrounding context
+        self.bn_act = nn.Sequential(
+            nn.BatchNorm2d(nOut),
+            Conv.default_act
+        )
+        self.add = add
+        self.F_glo= FGlo(nOut, reduction)
+
+    def forward(self, input):
+        output = self.conv1x1(input)
+        loc = self.F_loc(output)
+        sur = self.F_sur(output)
+        
+        joi_feat = torch.cat([loc, sur], 1) 
+
+        joi_feat = self.bn_act(joi_feat)
+
+        output = self.F_glo(joi_feat)  #F_glo is employed to refine the joint feature
+        # if residual version
+        if self.add:
+            output  = input + output
+        return output
+
+class ContextGuidedBlock_Down(nn.Module):
+    """
+    the size of feature map divided 2, (H,W,C)---->(H/2, W/2, 2C)
+    """
+    def __init__(self, nIn, dilation_rate=2, reduction=16):
+        """
+        args:
+           nIn: the channel of input feature map
+           nOut: the channel of output feature map, and nOut=2*nIn
+        """
+        super().__init__()
+        nOut = 2 * nIn
+        self.conv1x1 = Conv(nIn, nOut, 3, s=2)  #  size/2, channel: nIn--->nOut
+        
+        self.F_loc = nn.Conv2d(nOut, nOut, 3, padding=1, groups=nOut)
+        self.F_sur = nn.Conv2d(nOut, nOut, 3, padding=autopad(3, None, dilation_rate), dilation=dilation_rate, groups=nOut) 
+        
+        self.bn = nn.BatchNorm2d(2 * nOut, eps=1e-3)
+        self.act = Conv.default_act
+        self.reduce = Conv(2 * nOut, nOut,1,1)  #reduce dimension: 2*nOut--->nOut
+        
+        self.F_glo = FGlo(nOut, reduction)    
+
+    def forward(self, input):
+        output = self.conv1x1(input)
+        loc = self.F_loc(output)
+        sur = self.F_sur(output)
+
+        joi_feat = torch.cat([loc, sur],1)  #  the joint feature
+        joi_feat = self.bn(joi_feat)
+        joi_feat = self.act(joi_feat)
+        joi_feat = self.reduce(joi_feat)     #channel= nOut
+        
+        output = self.F_glo(joi_feat)  # F_glo is employed to refine the joint feature
+
+        return output
+
+class C3_ContextGuided(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(ContextGuidedBlock(c_, c_) for _ in range(n)))
+
+class C2f_ContextGuided(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(ContextGuidedBlock(self.c, self.c) for _ in range(n))
+
+######################################## ContextGuidedBlock end ########################################
+
+######################################## MS-Block start ########################################
+
+class MSBlockLayer(nn.Module):
+    def __init__(self, inc, ouc, k) -> None:
+        super().__init__()
+        
+        self.in_conv = Conv(inc, ouc, 1)
+        self.mid_conv = Conv(ouc, ouc, k, g=ouc)
+        self.out_conv = Conv(ouc, inc, 1)
+    
+    def forward(self, x):
+        return self.out_conv(self.mid_conv(self.in_conv(x)))
+
+class MSBlock(nn.Module):
+    def __init__(self, inc, ouc, kernel_sizes, in_expand_ratio=3., mid_expand_ratio=2., layers_num=3, in_down_ratio=2.) -> None:
+        super().__init__()
+        
+        in_channel = int(inc * in_expand_ratio // in_down_ratio)
+        self.mid_channel = in_channel // len(kernel_sizes)
+        groups = int(self.mid_channel * mid_expand_ratio)
+        self.in_conv = Conv(inc, in_channel)
+        
+        self.mid_convs = []
+        for kernel_size in kernel_sizes:
+            if kernel_size == 1:
+                self.mid_convs.append(nn.Identity())
+                continue
+            mid_convs = [MSBlockLayer(self.mid_channel, groups, k=kernel_size) for _ in range(int(layers_num))]
+            self.mid_convs.append(nn.Sequential(*mid_convs))
+        self.mid_convs = nn.ModuleList(self.mid_convs)
+        self.out_conv = Conv(in_channel, ouc, 1)
+        
+        self.attention = None
+    
+    def forward(self, x):
+        out = self.in_conv(x)
+        channels = []
+        for i,mid_conv in enumerate(self.mid_convs):
+            channel = out[:,i * self.mid_channel:(i+1) * self.mid_channel,...]
+            if i >= 1:
+                channel = channel + channels[i-1]
+            channel = mid_conv(channel)
+            channels.append(channel)
+        out = torch.cat(channels, dim=1)
+        out = self.out_conv(out)
+        if self.attention is not None:
+            out = self.attention(out)  
+        return out
+
+class C3_MSBlock(C3):
+    def __init__(self, c1, c2, n=1, kernel_sizes=[1, 3, 3], shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(MSBlock(c_, c_, kernel_sizes) for _ in range(n)))
+
+class C2f_MSBlock(C2f):
+    def __init__(self, c1, c2, n=1, kernel_sizes=[1, 3, 3], shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(MSBlock(self.c, self.c, kernel_sizes) for _ in range(n))
+
+######################################## MS-Block end ########################################

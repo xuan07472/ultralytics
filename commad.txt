@@ -28,12 +28,18 @@ python train.py --yaml ultralytics/models/v8/yolov8-KernelWarehouse.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-FocalModulation.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-swintransformer.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-repvit.yaml --info
-python train.py --yaml ultralytics/models/v8/yolov8-C2f-EMSC-OREPA.yaml --info
-python train.py --yaml ultralytics/models/v8/yolov8-C2f-EMSCP-OREPA.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-p2.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-attention.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-LAWDS.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-goldyolo.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P345.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P345-Custom.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P2345.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P2345-Custom.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-DCNV2-Dynamic.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-ContextGuided.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-C2f-MSBlock.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-ContextGuidedDown.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5n.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-EfficientHead.yaml --info
@@ -64,19 +70,15 @@ python train.py --yaml ultralytics/models/v5/yolov5-C3-DBB.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-FocalModulation.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-swintransformer.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-repvit.yaml --info
-python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSC-OREPA.yaml --info
-python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSCP-OREPA.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-fasternet-bifpn.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-C3-DCNV2-Dynamic.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345-Custom.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P2345.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P2345-Custom.yaml --info
-
-python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P345.yaml --info
-python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P345-Custom.yaml --info
-python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P2345.yaml --info
-python train.py --yaml ultralytics/models/v8/yolov8-AFPN-P2345-Custom.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-C3-ContextGuided.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-C3-MSBlock.yaml --info
+python train.py --yaml ultralytics/models/v5/yolov5-ContextGuidedDown.yaml --info
 
 python train.py --weight yolov8n.pt --yaml ultralytics/models/v8/yolov8n.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --workers 8 --batch 32 --fraction 0.1
 python train.py --yaml ultralytics/models/v8/yolov8n-efficientViT.yaml --data /home/hjj/Desktop/dataset/dataset_person/data.yaml --cache --workers 8 --batch 64
