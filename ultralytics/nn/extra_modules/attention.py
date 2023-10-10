@@ -12,7 +12,7 @@ from typing import Tuple, Optional, List
 from ..modules.conv import Conv, autopad
 
 __all__ = ['EMA', 'SimAM', 'SpatialGroupEnhance', 'BiLevelRoutingAttention', 'BiLevelRoutingAttention_nchw', 'TripletAttention', 
-           'CoordAtt', 'BAMBlock', 'EfficientAttention', 'LSKBlock', 'SEAttention', 'CPCA']
+           'CoordAtt', 'BAMBlock', 'EfficientAttention', 'LSKBlock', 'SEAttention', 'CPCA', 'MPCA']
 
 class EMA(nn.Module):
     def __init__(self, channels, factor=8):
@@ -842,7 +842,7 @@ class EfficientAttention(nn.Module):
             res.append(self.low_fre_attention(x, self.global_q, self.global_kv, self.avgpool))
         return self.proj_drop(self.proj(torch.cat(res, dim=1)))
 
-class LSKBlock(nn.Module):
+class LSKBlock_SA(nn.Module):
     def __init__(self, dim):
         super().__init__()
         self.conv0 = nn.Conv2d(dim, dim, 5, padding=2, groups=dim)
@@ -867,6 +867,24 @@ class LSKBlock(nn.Module):
         attn = attn1 * sig[:,0,:,:].unsqueeze(1) + attn2 * sig[:,1,:,:].unsqueeze(1)
         attn = self.conv(attn)
         return x * attn
+
+class LSKBlock(nn.Module):
+    def __init__(self, d_model):
+        super().__init__()
+
+        self.proj_1 = nn.Conv2d(d_model, d_model, 1)
+        self.activation = nn.GELU()
+        self.spatial_gating_unit = LSKBlock_SA(d_model)
+        self.proj_2 = nn.Conv2d(d_model, d_model, 1)
+
+    def forward(self, x):
+        shorcut = x.clone()
+        x = self.proj_1(x)
+        x = self.activation(x)
+        x = self.spatial_gating_unit(x)
+        x = self.proj_2(x)
+        x = x + shorcut
+        return x
 
 class SEAttention(nn.Module):
     def __init__(self, channel=512,reduction=16):
@@ -956,3 +974,29 @@ class CPCA(nn.Module):
         out = spatial_att * inputs
         out = self.conv(out)
         return out
+
+class MPCA(nn.Module):
+    # MultiPath Coordinate Attention
+    def __init__(self, channels) -> None:
+        super().__init__()
+        
+        self.gap = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            Conv(channels, channels)
+        )
+        self.pool_h = nn.AdaptiveAvgPool2d((None, 1))
+        self.pool_w = nn.AdaptiveAvgPool2d((1, None))
+        self.conv_hw = Conv(channels, channels, (3, 1))
+        self.conv_pool_hw = Conv(channels, channels, 1)
+    
+    def forward(self, x):
+        _, _, h, w = x.size()
+        x_pool_h, x_pool_w, x_pool_ch = self.pool_h(x), self.pool_w(x).permute(0, 1, 3, 2), self.gap(x)
+        x_pool_hw = torch.cat([x_pool_h, x_pool_w], dim=2)
+        x_pool_hw = self.conv_hw(x_pool_hw)
+        x_pool_h, x_pool_w = torch.split(x_pool_hw, [h, w], dim=2)
+        x_pool_hw_weight = self.conv_pool_hw(x_pool_hw).sigmoid()
+        x_pool_h_weight, x_pool_w_weight = torch.split(x_pool_hw_weight, [h, w], dim=2)
+        x_pool_h, x_pool_w = x_pool_h * x_pool_h_weight, x_pool_w * x_pool_w_weight
+        x_pool_ch = x_pool_ch * torch.mean(x_pool_hw_weight, dim=2, keepdim=True)
+        return x * x_pool_h.sigmoid() * x_pool_w.permute(0, 1, 3, 2).sigmoid() * x_pool_ch.sigmoid()

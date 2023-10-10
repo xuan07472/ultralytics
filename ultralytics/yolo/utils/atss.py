@@ -462,8 +462,7 @@ class ATSSAssigner(nn.Module):
                          overlaps):
 
         n_bs_max_boxes = self.bs * self.n_max_boxes
-        _candidate_overlaps = torch.where(is_in_candidate > 0,
-            overlaps, torch.zeros_like(overlaps))
+        _candidate_overlaps = torch.where(is_in_candidate > 0, overlaps, torch.zeros_like(overlaps))
         candidate_idxs = candidate_idxs.reshape([n_bs_max_boxes, -1])
         assist_idxs = self.n_anchors * torch.arange(n_bs_max_boxes, device=candidate_idxs.device)
         assist_idxs = assist_idxs[:,None]
@@ -485,7 +484,7 @@ class ATSSAssigner(nn.Module):
 
         # assigned target labels
         batch_idx = torch.arange(self.bs, dtype=gt_labels.dtype, device=gt_labels.device)
-        batch_idx = batch_idx[...,None]
+        batch_idx = batch_idx[..., None]
         target_gt_idx = (target_gt_idx + batch_idx * self.n_max_boxes).long()
         target_labels = gt_labels.flatten()[target_gt_idx.flatten()]
         target_labels = target_labels.reshape([self.bs, self.n_anchors])

@@ -8,7 +8,6 @@ python train.py --yaml ultralytics/models/v8/yolov8-C2f-ODConv.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-vanillanet.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-RevCol.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-LSKNet.yaml --info
-
 python train.py --yaml ultralytics/models/v8/yolov8.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-EfficientHead.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-aux.yaml --info
@@ -24,7 +23,6 @@ python train.py --yaml ultralytics/models/v8/yolov8-C2f-DCNV2.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-DCNV3.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-RCSOSA.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-fasternet-bifpn.yaml --info
-
 python train.py --yaml ultralytics/models/v8/yolov8-C2f-REPVGGOREPA.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-KernelWarehouse.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-FocalModulation.yaml --info
@@ -35,6 +33,7 @@ python train.py --yaml ultralytics/models/v8/yolov8-C2f-EMSCP-OREPA.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-p2.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-attention.yaml --info
 python train.py --yaml ultralytics/models/v8/yolov8-LAWDS.yaml --info
+python train.py --yaml ultralytics/models/v8/yolov8-goldyolo.yaml --info
 
 python train.py --yaml ultralytics/models/v5/yolov5n.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5n-EfficientHead.yaml --info
@@ -68,7 +67,7 @@ python train.py --yaml ultralytics/models/v5/yolov5-repvit.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSC-OREPA.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-C3-EMSCP-OREPA.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-fasternet-bifpn.yaml --info
-
+python train.py --yaml ultralytics/models/v5/yolov5-C3-DCNV2-Dynamic.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P345-Custom.yaml --info
 python train.py --yaml ultralytics/models/v5/yolov5-AFPN-P2345.yaml --info
