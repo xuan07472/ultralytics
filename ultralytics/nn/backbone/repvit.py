@@ -104,7 +104,7 @@ class RepVGGDW(torch.nn.Module):
     
     @torch.no_grad()
     def fuse_self(self):
-        conv = self.conv.fuse()
+        conv = self.conv.fuse_self()
         conv1 = self.conv1
         
         conv_w = conv.weight
