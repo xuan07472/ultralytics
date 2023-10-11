@@ -20,7 +20,8 @@ __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Fa
            'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3', 'FocalModulation',
            'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'C3_DCNv2_Dynamic', 'C2f_DCNv2_Dynamic',
            'SimFusion_3in', 'SimFusion_4in', 'IFM', 'InjectionMultiSum_Auto_pool', 'PyramidPoolAgg', 'AdvPoolFusion', 'TopBasicLayer',
-           'C3_ContextGuided', 'C2f_ContextGuided', 'C3_MSBlock', 'C2f_MSBlock', 'ContextGuidedBlock_Down']
+           'C3_ContextGuided', 'C2f_ContextGuided', 'C3_MSBlock', 'C2f_MSBlock', 'ContextGuidedBlock_Down', 'C3_DLKA', 'C2f_DLKA', 'CSPStage', 'SPDConv',
+           'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -518,9 +519,9 @@ def fuse_conv_bn(conv, bn):
     fusedconv.bias.copy_(torch.mm(w_bn, b_conv.reshape(-1, 1)).reshape(-1) + b_bn)
     return fusedconv
 
-class Attention(nn.Module):
+class OD_Attention(nn.Module):
     def __init__(self, in_planes, out_planes, kernel_size, groups=1, reduction=0.0625, kernel_num=4, min_channel=16):
-        super(Attention, self).__init__()
+        super(OD_Attention, self).__init__()
         attention_channel = max(int(in_planes * reduction), min_channel)
         self.kernel_size = kernel_size
         self.kernel_num = kernel_num
@@ -615,7 +616,7 @@ class ODConv2d(nn.Module):
         self.dilation = dilation
         self.groups = groups
         self.kernel_num = kernel_num
-        self.attention = Attention(in_planes, out_planes, kernel_size, groups=groups,
+        self.attention = OD_Attention(in_planes, out_planes, kernel_size, groups=groups,
                                    reduction=reduction, kernel_num=kernel_num)
         self.weight = nn.Parameter(torch.randn(kernel_num, out_planes, in_planes//groups, kernel_size, kernel_size),
                                    requires_grad=True)
@@ -1975,7 +1976,7 @@ class DropPath(nn.Module):
     def forward(self, x):
         return drop_path(x, self.drop_prob, self.training)
 
-class Attention(torch.nn.Module):
+class GOLDYOLO_Attention(torch.nn.Module):
     def __init__(self, dim, key_dim, num_heads, attn_ratio=4):
         super().__init__()
         self.num_heads = num_heads
@@ -2017,7 +2018,7 @@ class top_Block(nn.Module):
         self.num_heads = num_heads
         self.mlp_ratio = mlp_ratio
         
-        self.attn = Attention(dim, key_dim=key_dim, num_heads=num_heads, attn_ratio=attn_ratio)
+        self.attn = GOLDYOLO_Attention(dim, key_dim=key_dim, num_heads=num_heads, attn_ratio=attn_ratio)
         
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
@@ -2222,14 +2223,264 @@ class MSBlock(nn.Module):
         return out
 
 class C3_MSBlock(C3):
-    def __init__(self, c1, c2, n=1, kernel_sizes=[1, 3, 3], shortcut=False, g=1, e=0.5):
+    def __init__(self, c1, c2, n=1, kernel_sizes=[1, 3, 3], in_expand_ratio=3., mid_expand_ratio=2., layers_num=3, in_down_ratio=2., shortcut=False, g=1, e=0.5):
         super().__init__(c1, c2, n, shortcut, g, e)
         c_ = int(c2 * e)  # hidden channels
-        self.m = nn.Sequential(*(MSBlock(c_, c_, kernel_sizes) for _ in range(n)))
+        self.m = nn.Sequential(*(MSBlock(c_, c_, kernel_sizes, in_expand_ratio, mid_expand_ratio, layers_num, in_down_ratio) for _ in range(n)))
 
 class C2f_MSBlock(C2f):
-    def __init__(self, c1, c2, n=1, kernel_sizes=[1, 3, 3], shortcut=False, g=1, e=0.5):
+    def __init__(self, c1, c2, n=1, kernel_sizes=[1, 3, 3], in_expand_ratio=3., mid_expand_ratio=2., layers_num=3, in_down_ratio=2., shortcut=False, g=1, e=0.5):
         super().__init__(c1, c2, n, shortcut, g, e)
-        self.m = nn.ModuleList(MSBlock(self.c, self.c, kernel_sizes) for _ in range(n))
+        self.m = nn.ModuleList(MSBlock(self.c, self.c, kernel_sizes, in_expand_ratio, mid_expand_ratio, layers_num, in_down_ratio) for _ in range(n))
 
 ######################################## MS-Block end ########################################
+
+######################################## deformableLKA start ########################################
+
+class Bottleneck_DLKA(Bottleneck):
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = deformable_LKA(c2)
+
+class C3_DLKA(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_DLKA(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_DLKA(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_DLKA(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## deformableLKA end ########################################
+
+######################################## DAMO-YOLO GFPN start ########################################
+
+class BasicBlock_3x3_Reverse(nn.Module):
+    def __init__(self,
+                 ch_in,
+                 ch_hidden_ratio,
+                 ch_out,
+                 shortcut=True):
+        super(BasicBlock_3x3_Reverse, self).__init__()
+        assert ch_in == ch_out
+        ch_hidden = int(ch_in * ch_hidden_ratio)
+        self.conv1 = Conv(ch_hidden, ch_out, 3, s=1)
+        self.conv2 = RepConv(ch_in, ch_hidden, 3, s=1)
+        self.shortcut = shortcut
+
+    def forward(self, x):
+        y = self.conv2(x)
+        y = self.conv1(y)
+        if self.shortcut:
+            return x + y
+        else:
+            return y
+
+class SPP(nn.Module):
+    def __init__(
+        self,
+        ch_in,
+        ch_out,
+        k,
+        pool_size
+    ):
+        super(SPP, self).__init__()
+        self.pool = []
+        for i, size in enumerate(pool_size):
+            pool = nn.MaxPool2d(kernel_size=size,
+                                stride=1,
+                                padding=size // 2,
+                                ceil_mode=False)
+            self.add_module('pool{}'.format(i), pool)
+            self.pool.append(pool)
+        self.conv = Conv(ch_in, ch_out, k)
+
+    def forward(self, x):
+        outs = [x]
+
+        for pool in self.pool:
+            outs.append(pool(x))
+        y = torch.cat(outs, axis=1)
+
+        y = self.conv(y)
+        return y
+
+class CSPStage(nn.Module):
+    def __init__(self,
+                 ch_in,
+                 ch_out,
+                 n,
+                 block_fn='BasicBlock_3x3_Reverse',
+                 ch_hidden_ratio=1.0,
+                 act='silu',
+                 spp=False):
+        super(CSPStage, self).__init__()
+
+        split_ratio = 2
+        ch_first = int(ch_out // split_ratio)
+        ch_mid = int(ch_out - ch_first)
+        self.conv1 = Conv(ch_in, ch_first, 1)
+        self.conv2 = Conv(ch_in, ch_mid, 1)
+        self.convs = nn.Sequential()
+
+        next_ch_in = ch_mid
+        for i in range(n):
+            if block_fn == 'BasicBlock_3x3_Reverse':
+                self.convs.add_module(
+                    str(i),
+                    BasicBlock_3x3_Reverse(next_ch_in,
+                                           ch_hidden_ratio,
+                                           ch_mid,
+                                           shortcut=True))
+            else:
+                raise NotImplementedError
+            if i == (n - 1) // 2 and spp:
+                self.convs.add_module('spp', SPP(ch_mid * 4, ch_mid, 1, [5, 9, 13]))
+            next_ch_in = ch_mid
+        self.conv3 = Conv(ch_mid * n + ch_first, ch_out, 1)
+
+    def forward(self, x):
+        y1 = self.conv1(x)
+        y2 = self.conv2(x)
+
+        mid_out = [y1]
+        for conv in self.convs:
+            y2 = conv(y2)
+            mid_out.append(y2)
+        y = torch.cat(mid_out, axis=1)
+        y = self.conv3(y)
+        return y
+
+######################################## DAMO-YOLO GFPN end ########################################
+
+######################################## SPD-Conv start ########################################
+
+class SPDConv(nn.Module):
+    # Changing the dimension of the Tensor
+    def __init__(self, inc, ouc, dimension=1):
+        super().__init__()
+        self.d = dimension
+        self.conv = Conv(inc * 4, ouc, k=3)
+
+    def forward(self, x):
+        x = torch.cat([x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]], 1)
+        x = self.conv(x)
+        return x
+
+######################################## SPD-Conv end ########################################
+
+######################################## EfficientRepBiPAN start ########################################
+
+class Transpose(nn.Module):
+    '''Normal Transpose, default for upsampling'''
+    def __init__(self, in_channels, out_channels, kernel_size=2, stride=2):
+        super().__init__()
+        self.upsample_transpose = torch.nn.ConvTranspose2d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=kernel_size,
+            stride=stride,
+            bias=True
+        )
+
+    def forward(self, x):
+        return self.upsample_transpose(x)
+
+class BiFusion(nn.Module):
+    '''BiFusion Block in PAN'''
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.cv1 = Conv(in_channels[1], out_channels, 1, 1)
+        self.cv2 = Conv(in_channels[2], out_channels, 1, 1)
+        self.cv3 = Conv(out_channels * 3, out_channels, 1, 1)
+
+        self.upsample = Transpose(
+            in_channels=out_channels,
+            out_channels=out_channels,
+        )
+        self.downsample = Conv(
+            out_channels,
+            out_channels,
+            3,
+            2
+        )
+
+    def forward(self, x):
+        x0 = self.upsample(x[0])
+        x1 = self.cv1(x[1])
+        x2 = self.downsample(self.cv2(x[2]))
+        return self.cv3(torch.cat((x0, x1, x2), dim=1))
+
+class BottleRep(nn.Module):
+    def __init__(self, in_channels, out_channels, basic_block=RepVGGBlock, weight=False):
+        super().__init__()
+        self.conv1 = basic_block(in_channels, out_channels)
+        self.conv2 = basic_block(out_channels, out_channels)
+        if in_channels != out_channels:
+            self.shortcut = False
+        else:
+            self.shortcut = True
+        if weight:
+            self.alpha = nn.Parameter(torch.ones(1))
+        else:
+            self.alpha = 1.0
+
+    def forward(self, x):
+        outputs = self.conv1(x)
+        outputs = self.conv2(outputs)
+        return outputs + self.alpha * x if self.shortcut else outputs
+
+class RepBlock(nn.Module):
+    '''
+        RepBlock is a stage block with rep-style basic block
+    '''
+    def __init__(self, in_channels, out_channels, n=1, block=RepVGGBlock, basic_block=RepVGGBlock):
+        super().__init__()
+
+        self.conv1 = block(in_channels, out_channels)
+        self.block = nn.Sequential(*(block(out_channels, out_channels) for _ in range(n - 1))) if n > 1 else None
+        if block == BottleRep:
+            self.conv1 = BottleRep(in_channels, out_channels, basic_block=basic_block, weight=True)
+            n = n // 2
+            self.block = nn.Sequential(*(BottleRep(out_channels, out_channels, basic_block=basic_block, weight=True) for _ in range(n - 1))) if n > 1 else None
+
+    def forward(self, x):
+        x = self.conv1(x)
+        if self.block is not None:
+            x = self.block(x)
+        return x
+    
+######################################## EfficientRepBiPAN start ########################################
+
+######################################## EfficientNet-MBConv start ########################################
+
+class MBConv(nn.Module):
+    def __init__(self, inc, ouc, shortcut=True, e=4, dropout=0.1) -> None:
+        super().__init__()
+        midc = inc * e
+        self.conv_pw_1 = Conv(inc, midc, 1)
+        self.conv_dw_1 = Conv(midc, midc, 3, g=midc)
+        self.effective_se = EffectiveSEModule(midc)
+        self.conv1 = Conv(midc, ouc, 1, act=False)
+        self.dropout = nn.Dropout2d(p=dropout)
+        self.add = shortcut and inc == ouc
+    
+    def forward(self, x):
+        return x + self.dropout(self.conv1(self.effective_se(self.conv_dw_1(self.conv_pw_1(x))))) if self.add else self.dropout(self.conv1(self.effective_se(self.conv_dw_1(self.conv_pw_1(x)))))
+
+class C3_EMBC(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(MBConv(c_, c_, shortcut) for _ in range(n)))
+
+class C2f_EMBC(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(MBConv(self.c, self.c, shortcut) for _ in range(n))
+
+######################################## EfficientNet-MBConv end ########################################

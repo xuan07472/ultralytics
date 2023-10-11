@@ -703,7 +703,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                  C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, KWConv, C2f_KW, C3_KW, DySnakeConv, C2f_DySnakeConv, C3_DySnakeConv,
                  DCNv2, C3_DCNv2, C2f_DCNv2, DCNV3_YOLO, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv,
                  OREPA, OREPA_LargeConv, RepVGGBlock_OREPA, C3_OREPA, C2f_OREPA, C3_DBB, C3_REPVGGOREPA, C2f_REPVGGOREPA,
-                 C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, C3_MSBlock, C2f_MSBlock):
+                 C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, C3_MSBlock, C2f_MSBlock,
+                 C3_DLKA, C2f_DLKA, CSPStage, SPDConv, RepBlock, C3_EMBC, C2f_EMBC):
             if args[0] == 'head_channel':
                 args[0] = d[args[0]]
             c1, c2 = ch[f], args[0]
@@ -722,7 +723,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                      C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, C2f_KW, C3_KW, C2f_DySnakeConv, C3_DySnakeConv,
                      C3_DCNv2, C2f_DCNv2, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv, C3_OREPA, C2f_OREPA, C3_DBB,
                      C3_REPVGGOREPA, C2f_REPVGGOREPA, C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, 
-                     C3_MSBlock, C2f_MSBlock):
+                     C3_MSBlock, C2f_MSBlock, C3_DLKA, C2f_DLKA, CSPStage, RepBlock, C3_EMBC, C2f_EMBC):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
@@ -758,7 +759,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                    RevCol,
                    lsknet_t, lsknet_s,
                    SwinTransformer_Tiny,
-                   repvit_m1, repvit_m2, repvit_m3
+                   repvit_m0_9, repvit_m1_0, repvit_m1_1, repvit_m1_5, repvit_m2_3
                    }:
             if m is RevCol:
                 args[1] = [make_divisible(min(k, max_channels) * width, 8) for k in args[1]]
@@ -767,7 +768,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
             c2 = m.channel
         elif m in {EMA, SpatialAttention, BiLevelRoutingAttention, BiLevelRoutingAttention_nchw,
                    TripletAttention, CoordAtt, CBAM, BAMBlock, LSKBlock, ScConv, LAWDS, EMSConv, EMSConvP,
-                   SEAttention, CPCA, Partial_conv3, FocalModulation, EfficientAttention, MPCA}:
+                   SEAttention, CPCA, Partial_conv3, FocalModulation, EfficientAttention, MPCA, deformable_LKA,
+                   EffectiveSEModule}:
             c2 = ch[f]
             args = [c2, *args]
             # print(args)
@@ -776,6 +778,10 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
         elif m is ContextGuidedBlock_Down:
             c2 = ch[f] * 2
             args = [ch[f], c2, *args]
+        elif m is BiFusion:
+            c1 = [ch[x] for x in f]
+            c2 = make_divisible(min(args[0], max_channels) * width, 8)
+            args = [c1, c2]
         # --------------GOLD-YOLO--------------
         elif m in {SimFusion_4in, AdvPoolFusion}:
             c2 = sum(ch[x] for x in f)

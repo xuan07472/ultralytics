@@ -2,6 +2,7 @@ import torch
 from torch import nn, Tensor, LongTensor
 from torch.nn import init
 import torch.nn.functional as F
+import torchvision
 from efficientnet_pytorch.model import MemoryEfficientSwish
 
 import itertools
@@ -12,7 +13,8 @@ from typing import Tuple, Optional, List
 from ..modules.conv import Conv, autopad
 
 __all__ = ['EMA', 'SimAM', 'SpatialGroupEnhance', 'BiLevelRoutingAttention', 'BiLevelRoutingAttention_nchw', 'TripletAttention', 
-           'CoordAtt', 'BAMBlock', 'EfficientAttention', 'LSKBlock', 'SEAttention', 'CPCA', 'MPCA']
+           'CoordAtt', 'BAMBlock', 'EfficientAttention', 'LSKBlock', 'SEAttention', 'CPCA', 'MPCA', 'deformable_LKA',
+           'EffectiveSEModule']
 
 class EMA(nn.Module):
     def __init__(self, channels, factor=8):
@@ -1000,3 +1002,59 @@ class MPCA(nn.Module):
         x_pool_h, x_pool_w = x_pool_h * x_pool_h_weight, x_pool_w * x_pool_w_weight
         x_pool_ch = x_pool_ch * torch.mean(x_pool_hw_weight, dim=2, keepdim=True)
         return x * x_pool_h.sigmoid() * x_pool_w.permute(0, 1, 3, 2).sigmoid() * x_pool_ch.sigmoid()
+
+class DeformConv(nn.Module):
+
+    def __init__(self, in_channels, groups, kernel_size=(3,3), padding=1, stride=1, dilation=1, bias=True):
+        super(DeformConv, self).__init__()
+        
+        self.offset_net = nn.Conv2d(in_channels=in_channels,
+                                    out_channels=2 * kernel_size[0] * kernel_size[1],
+                                    kernel_size=kernel_size,
+                                    padding=padding,
+                                    stride=stride,
+                                    dilation=dilation,
+                                    bias=True)
+
+        self.deform_conv = torchvision.ops.DeformConv2d(in_channels=in_channels,
+                                                        out_channels=in_channels,
+                                                        kernel_size=kernel_size,
+                                                        padding=padding,
+                                                        groups=groups,
+                                                        stride=stride,
+                                                        dilation=dilation,
+                                                        bias=False)
+
+    def forward(self, x):
+        offsets = self.offset_net(x)
+        out = self.deform_conv(x, offsets)
+        return out
+
+class deformable_LKA(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.conv0 = DeformConv(dim, kernel_size=(5, 5), padding=2, groups=dim)
+        self.conv_spatial = DeformConv(dim, kernel_size=(7, 7), stride=1, padding=9, groups=dim, dilation=3)
+        self.conv1 = nn.Conv2d(dim, dim, 1)
+
+    def forward(self, x):
+        u = x.clone()        
+        attn = self.conv0(x)
+        attn = self.conv_spatial(attn)
+        attn = self.conv1(attn)
+        return u * attn
+
+class EffectiveSEModule(nn.Module):
+    def __init__(self, channels, add_maxpool=False):
+        super(EffectiveSEModule, self).__init__()
+        self.add_maxpool = add_maxpool
+        self.fc = nn.Conv2d(channels, channels, kernel_size=1, padding=0)
+        self.gate = nn.Hardsigmoid()
+
+    def forward(self, x):
+        x_se = x.mean((2, 3), keepdim=True)
+        if self.add_maxpool:
+            # experimental codepath, may remove or change
+            x_se = 0.5 * x_se + 0.5 * x.amax((2, 3), keepdim=True)
+        x_se = self.fc(x_se)
+        return x * self.gate(x_se)
