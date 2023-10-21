@@ -21,7 +21,7 @@ __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Fa
            'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'C3_DCNv2_Dynamic', 'C2f_DCNv2_Dynamic',
            'SimFusion_3in', 'SimFusion_4in', 'IFM', 'InjectionMultiSum_Auto_pool', 'PyramidPoolAgg', 'AdvPoolFusion', 'TopBasicLayer',
            'C3_ContextGuided', 'C2f_ContextGuided', 'C3_MSBlock', 'C2f_MSBlock', 'ContextGuidedBlock_Down', 'C3_DLKA', 'C2f_DLKA', 'CSPStage', 'SPDConv',
-           'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC']
+           'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC', 'SPPF_LSKA', 'C3_DAttention', 'C2f_DAttention']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -2484,3 +2484,49 @@ class C2f_EMBC(C2f):
         self.m = nn.ModuleList(MBConv(self.c, self.c, shortcut) for _ in range(n))
 
 ######################################## EfficientNet-MBConv end ########################################
+
+######################################## SPPF with LSKA start ########################################
+
+class SPPF_LSKA(nn.Module):
+    """Spatial Pyramid Pooling - Fast (SPPF) layer for YOLOv5 by Glenn Jocher."""
+
+    def __init__(self, c1, c2, k=5):  # equivalent to SPP(k=(5, 9, 13))
+        super().__init__()
+        c_ = c1 // 2  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c_ * 4, c2, 1, 1)
+        self.m = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
+        self.lska = LSKA(c_ * 4, k_size=11)
+
+    def forward(self, x):
+        """Forward pass through Ghost Convolution block."""
+        x = self.cv1(x)
+        y1 = self.m(x)
+        y2 = self.m(y1)
+        return self.cv2(self.lska(torch.cat((x, y1, y2, self.m(y2)), 1)))
+
+######################################## SPPF with LSKA end ########################################
+
+class Bottleneck_DAttention(Bottleneck):
+    """Standard bottleneck with DAttention."""
+
+    def __init__(self, c1, c2, fmapsize, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.attention = DAttention(c2, fmapsize)
+    
+    def forward(self, x):
+        return x + self.attention(self.cv2(self.cv1(x))) if self.add else self.attention(self.cv2(self.cv1(x)))
+
+class C3_DAttention(C3):
+    def __init__(self, c1, c2, n=1, fmapsize=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_DAttention(c_, c_, fmapsize, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_DAttention(C2f):
+    def __init__(self, c1, c2, n=1, fmapsize=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_DAttention(self.c, self.c, fmapsize, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f DCNV2_Dynamic end ########################################

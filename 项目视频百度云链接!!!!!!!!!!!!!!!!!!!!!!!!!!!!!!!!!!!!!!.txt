@@ -47,3 +47,7 @@
 链接：https://pan.baidu.com/s/1BtL51pABdbKlQ7SBNRnMzA?pwd=ypeo 
 提取码：ypeo # BiliBili 魔鬼面具Up
 1. 20231010版本更新说明
+
+链接：https://pan.baidu.com/s/1VW9-TVwB16JLLblMtCUJog?pwd=44ap 
+提取码：44ap # BiliBili 魔鬼面具Up
+1. DAttention(Vision Transformer with Deformable Attention CVPR2022)使用注意说明.
