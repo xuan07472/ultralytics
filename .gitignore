@@ -159,4 +159,5 @@ weights/
 *.cache
 try.ipynb
 *_c.yaml
+*_c.ipynb
 yolov8-v*.patch
