@@ -207,7 +207,7 @@ class BaseModel(nn.Module):
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom, 
-                          Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment)):
+                          Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Segment_Efficient)):
             m.stride = fn(m.stride)
             m.anchors = fn(m.anchors)
             m.strides = fn(m.strides)
@@ -278,13 +278,13 @@ class DetectionModel(BaseModel):
         # Build strides
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom, 
-                          Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Pose)):
+                          Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Segment_Efficient, Pose)):
             s = 640  # 2x min stride
             m.inplace = self.inplace
             if isinstance(m, (DetectAux,)):
                 forward = lambda x: self.forward(x)[:3]
             else:
-                forward = lambda x: self.forward(x)[0] if isinstance(m, (Segment, Pose)) else self.forward(x)
+                forward = lambda x: self.forward(x)[0] if isinstance(m, (Segment, Segment_Efficient, Pose)) else self.forward(x)
             try:
                 m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(2, ch, s, s))])  # forward
             except RuntimeError as e:
@@ -664,7 +664,7 @@ def attempt_load_weights(weights, device=None, inplace=True, fuse=False):
     for m in ensemble.modules():
         t = type(m)
         if t in (nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, 
-                 Detect_AFPN_P345_Custom, Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment):
+                 Detect_AFPN_P345_Custom, Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Segment_Efficient):
             m.inplace = inplace
         elif t is nn.Upsample and not hasattr(m, 'recompute_scale_factor'):
             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
@@ -701,7 +701,7 @@ def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
     for m in model.modules():
         t = type(m)
         if t in (nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom,
-                 DetectAux, Detect_Efficient, Segment):
+                 DetectAux, Detect_Efficient, Segment, Segment_Efficient):
             m.inplace = inplace
         elif t is nn.Upsample and not hasattr(m, 'recompute_scale_factor'):
             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
@@ -763,7 +763,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                  OREPA, OREPA_LargeConv, RepVGGBlock_OREPA, C3_OREPA, C2f_OREPA, C3_DBB, C3_REPVGGOREPA, C2f_REPVGGOREPA,
                  C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, C3_MSBlock, C2f_MSBlock,
                  C3_DLKA, C2f_DLKA, CSPStage, SPDConv, RepBlock, C3_EMBC, C2f_EMBC, SPPF_LSKA, C3_DAttention, C2f_DAttention,
-                 C3_Parc, C2f_Parc, C3_DWR, C2f_DWR):
+                 C3_Parc, C2f_Parc, C3_DWR, C2f_DWR, RFAConv, RFCAConv, RFCBAMConv, C3_RFAConv, C2f_RFAConv,
+                 C3_RFCBAMConv, C2f_RFCBAMConv, C3_RFCAConv, C2f_RFCAConv):
             if args[0] == 'head_channel':
                 args[0] = d[args[0]]
             c1, c2 = ch[f], args[0]
@@ -783,15 +784,18 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                      C3_DCNv2, C2f_DCNv2, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv, C3_OREPA, C2f_OREPA, C3_DBB,
                      C3_REPVGGOREPA, C2f_REPVGGOREPA, C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, 
                      C3_MSBlock, C2f_MSBlock, C3_DLKA, C2f_DLKA, CSPStage, RepBlock, C3_EMBC, C2f_EMBC, C3_DAttention, C2f_DAttention,
-                     C3_Parc, C2f_Parc, C3_DWR, C2f_DWR):
+                     C3_Parc, C2f_Parc, C3_DWR, C2f_DWR, C3_RFAConv, C2f_RFAConv, C3_RFCBAMConv, C2f_RFCBAMConv, C3_RFCAConv, C2f_RFCAConv):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
             args = [ch[f], *args]
-        elif m in (HGStem, HGBlock):
+        elif m in (HGStem, HGBlock, Ghost_HGBlock, Rep_HGBlock):
             c1, cm, c2 = ch[f], args[0], args[1]
+            if c2 != nc:  # if c2 not equal to number of classes (i.e. for Classify() output)
+                c2 = make_divisible(min(c2, max_channels) * width, 8)
+                cm = make_divisible(min(cm, max_channels) * width, 8)
             args = [c1, cm, c2, *args[2:]]
-            if m is HGBlock:
+            if m in (HGBlock, Ghost_HGBlock, Rep_HGBlock):
                 args.insert(4, n)  # number of repeats
                 n = 1
 
@@ -800,9 +804,9 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
         elif m in (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom, 
-                   Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Pose):
+                   Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Segment_Efficient, Pose):
             args.append([ch[x] for x in f])
-            if m is Segment:
+            if m in (Segment, Segment_Efficient):
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
         elif m is Fusion:
             args[0] = d[args[0]]
@@ -953,9 +957,9 @@ def guess_model_task(model):
             return 'classify'
         if 'detect' in m:
             return 'detect'
-        if m == 'segment':
+        if 'segment' in m:
             return 'segment'
-        if m == 'pose':
+        if 'pose' in m:
             return 'pose'
 
     # Guess from model cfg
@@ -973,11 +977,11 @@ def guess_model_task(model):
                 return cfg2task(eval(x))
 
         for m in model.modules():
-            if isinstance(m, Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, 
+            if isinstance(m, (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, 
                               Detect_AFPN_P345, Detect_AFPN_P345_Custom, Detect_Efficient, DetectAux,
-                              Detect_DyHeadWithDCNV3):
+                              Detect_DyHeadWithDCNV3)):
                 return 'detect'
-            elif isinstance(m, Segment):
+            elif isinstance(m, (Segment, Segment_Efficient)):
                 return 'segment'
             elif isinstance(m, Classify):
                 return 'classify'

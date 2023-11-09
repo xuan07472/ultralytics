@@ -64,11 +64,11 @@ class HGStem(nn.Module):
     def __init__(self, c1, cm, c2):
         """Initialize the SPP layer with input/output channels and specified kernel sizes for max pooling."""
         super().__init__()
-        self.stem1 = Conv(c1, cm, 3, 2, act=nn.ReLU())
-        self.stem2a = Conv(cm, cm // 2, 2, 1, 0, act=nn.ReLU())
-        self.stem2b = Conv(cm // 2, cm, 2, 1, 0, act=nn.ReLU())
-        self.stem3 = Conv(cm * 2, cm, 3, 2, act=nn.ReLU())
-        self.stem4 = Conv(cm, c2, 1, 1, act=nn.ReLU())
+        self.stem1 = Conv(c1, cm, 3, 2)
+        self.stem2a = Conv(cm, cm // 2, 2, 1, 0)
+        self.stem2b = Conv(cm // 2, cm, 2, 1, 0)
+        self.stem3 = Conv(cm * 2, cm, 3, 2)
+        self.stem4 = Conv(cm, c2, 1, 1)
         self.pool = nn.MaxPool2d(kernel_size=2, stride=1, padding=0, ceil_mode=True)
 
     def forward(self, x):
@@ -92,7 +92,7 @@ class HGBlock(nn.Module):
     https://github.com/PaddlePaddle/PaddleDetection/blob/develop/ppdet/modeling/backbones/hgnet_v2.py
     """
 
-    def __init__(self, c1, cm, c2, k=3, n=6, lightconv=False, shortcut=False, act=nn.ReLU()):
+    def __init__(self, c1, cm, c2, k=3, n=6, lightconv=False, shortcut=False, act=True):
         """Initializes a CSP Bottleneck with 1 convolution using specified input and output channels."""
         super().__init__()
         block = LightConv if lightconv else Conv

@@ -3,13 +3,14 @@ import torch
 import torch.nn as nn
 from torch.nn.init import constant_, xavier_uniform_
 
-from ..modules import Conv, DFL, C2f, RepConv
+from ..modules import Conv, DFL, C2f, RepConv, Proto
 from .block import *
 from .rep_block import *
 from .afpn import AFPN_P345, AFPN_P345_Custom, AFPN_P2345, AFPN_P2345_Custom
 from ultralytics.utils.tal import dist2bbox, make_anchors
 
-__all__ = ['Detect_DyHead', 'Detect_DyHeadWithDCNV3', 'Detect_AFPN_P345', 'Detect_AFPN_P345_Custom', 'Detect_AFPN_P2345', 'Detect_AFPN_P2345_Custom', 'Detect_Efficient', 'DetectAux']
+__all__ = ['Detect_DyHead', 'Detect_DyHeadWithDCNV3', 'Detect_AFPN_P345', 'Detect_AFPN_P345_Custom', 'Detect_AFPN_P2345', 'Detect_AFPN_P2345_Custom', 'Detect_Efficient', 'DetectAux',
+           'Segment_Efficient']
 
 class Detect_DyHead(nn.Module):
     """YOLOv8 Detect head with DyHead for detection models."""
@@ -290,3 +291,28 @@ class DetectAux(nn.Module):
     
     def switch_to_deploy(self):
         del self.cv4, self.cv5, self.dfl_aux
+    
+class Segment_Efficient(Detect_Efficient):
+    """YOLOv8 Segment head for segmentation models."""
+
+    def __init__(self, nc=80, nm=32, npr=256, ch=()):
+        """Initialize the YOLO model attributes such as the number of masks, prototypes, and the convolution layers."""
+        super().__init__(nc, ch)
+        self.nm = nm  # number of masks
+        self.npr = npr  # number of protos
+        self.proto = Proto(ch[0], self.npr, self.nm)  # protos
+        self.detect = Detect_Efficient.forward
+
+        c4 = max(ch[0] // 4, self.nm)
+        self.cv4 = nn.ModuleList(nn.Sequential(Conv(x, c4, 3), Conv(c4, c4, 3), nn.Conv2d(c4, self.nm, 1)) for x in ch)
+
+    def forward(self, x):
+        """Return model outputs and mask coefficients if training, otherwise return outputs and mask coefficients."""
+        p = self.proto(x[0])  # mask protos
+        bs = p.shape[0]  # batch size
+
+        mc = torch.cat([self.cv4[i](x[i]).view(bs, self.nm, -1) for i in range(self.nl)], 2)  # mask coefficients
+        x = self.detect(self, x)
+        if self.training:
+            return x, mc, p
+        return (torch.cat([x, mc], 1), p) if self.export else (torch.cat([x[0], mc], 1), (x[1], mc, p))

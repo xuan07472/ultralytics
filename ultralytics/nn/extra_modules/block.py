@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import math
 import numpy as np
 from einops import rearrange
-from ..modules.conv import Conv, DWConv, RepConv, autopad
+from ..modules.conv import Conv, DWConv, RepConv, GhostConv, autopad
 from ..modules.block import *
 from .attention import *
 from .rep_block import DiverseBranchBlock
@@ -12,6 +12,7 @@ from .kernel_warehouse import KWConv
 from .dynamic_snake_conv import DySnakeConv
 from .ops_dcnv3.modules import DCNv3, DCNv3_DyHead
 from .orepa import *
+from .RFAConv import *
 from ultralytics.utils.torch_utils import make_divisible
 from timm.layers import trunc_normal_
 
@@ -22,7 +23,8 @@ __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Fa
            'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'C3_DCNv2_Dynamic', 'C2f_DCNv2_Dynamic',
            'SimFusion_3in', 'SimFusion_4in', 'IFM', 'InjectionMultiSum_Auto_pool', 'PyramidPoolAgg', 'AdvPoolFusion', 'TopBasicLayer',
            'C3_ContextGuided', 'C2f_ContextGuided', 'C3_MSBlock', 'C2f_MSBlock', 'ContextGuidedBlock_Down', 'C3_DLKA', 'C2f_DLKA', 'CSPStage', 'SPDConv',
-           'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC', 'SPPF_LSKA', 'C3_DAttention', 'C2f_DAttention', 'C3_Parc', 'C2f_Parc', 'C3_DWR', 'C2f_DWR']
+           'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC', 'SPPF_LSKA', 'C3_DAttention', 'C2f_DAttention', 'C3_Parc', 'C2f_Parc', 'C3_DWR', 'C2f_DWR',
+           'C3_RFAConv', 'C2f_RFAConv', 'C3_RFCBAMConv', 'C2f_RFCBAMConv', 'C3_RFCAConv', 'C2f_RFCAConv', 'Ghost_HGBlock', 'Rep_HGBlock']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -2607,7 +2609,7 @@ class C2f_Parc(C2f):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(Bottleneck_ParC(self.c, self.c, fmapsize, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
-######################################## C3 C2f Dilation-wise Residual end ########################################
+######################################## C3 C2f Dilation-wise Residual start ########################################
 
 class DWR(nn.Module):
     def __init__(self, dim) -> None:
@@ -2639,4 +2641,135 @@ class C2f_DWR(C2f):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(DWR(self.c) for _ in range(n))
 
-######################################## C3 C2f Dilation-wise Residual start ########################################
+######################################## C3 C2f Dilation-wise Residual end ########################################
+
+######################################## C3 C2f RFAConv start ########################################
+
+class Bottleneck_RFAConv(Bottleneck):
+    """Standard bottleneck with RFAConv."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = RFAConv(c_, c2, k[1])
+
+class C3_RFAConv(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_RFAConv(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_RFAConv(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_RFAConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+class Bottleneck_RFCBAMConv(Bottleneck):
+    """Standard bottleneck with RFCBAMConv."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = RFCBAMConv(c_, c2, k[1])
+
+class C3_RFCBAMConv(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_RFCBAMConv(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_RFCBAMConv(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_RFCBAMConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+class Bottleneck_RFCAConv(Bottleneck):
+    """Standard bottleneck with RFCBAMConv."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv2 = RFCAConv(c_, c2, k[1])
+
+class C3_RFCAConv(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_RFCAConv(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_RFCAConv(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_RFCAConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f RFAConv end ########################################
+
+######################################## HGBlock with RepConv and GhostConv start ########################################
+
+class Ghost_HGBlock(nn.Module):
+    """
+    HG_Block of PPHGNetV2 with 2 convolutions and LightConv.
+
+    https://github.com/PaddlePaddle/PaddleDetection/blob/develop/ppdet/modeling/backbones/hgnet_v2.py
+    """
+
+    def __init__(self, c1, cm, c2, k=3, n=6, lightconv=False, shortcut=False, act=True):
+        """Initializes a CSP Bottleneck with 1 convolution using specified input and output channels."""
+        super().__init__()
+        block = GhostConv if lightconv else Conv
+        self.m = nn.ModuleList(block(c1 if i == 0 else cm, cm, k=k, act=act) for i in range(n))
+        self.sc = Conv(c1 + n * cm, c2 // 2, 1, 1, act=act)  # squeeze conv
+        self.ec = Conv(c2 // 2, c2, 1, 1, act=act)  # excitation conv
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        """Forward pass of a PPHGNetV2 backbone layer."""
+        y = [x]
+        y.extend(m(y[-1]) for m in self.m)
+        y = self.ec(self.sc(torch.cat(y, 1)))
+        return y + x if self.add else y
+
+class RepLightConv(nn.Module):
+    """
+    Light convolution with args(ch_in, ch_out, kernel).
+
+    https://github.com/PaddlePaddle/PaddleDetection/blob/develop/ppdet/modeling/backbones/hgnet_v2.py
+    """
+
+    def __init__(self, c1, c2, k=1, act=nn.ReLU()):
+        """Initialize Conv layer with given arguments including activation."""
+        super().__init__()
+        self.conv1 = Conv(c1, c2, 1, act=False)
+        self.conv2 = RepConv(c2, c2, k, g=math.gcd(c1, c2), act=act)
+
+    def forward(self, x):
+        """Apply 2 convolutions to input tensor."""
+        return self.conv2(self.conv1(x))
+
+class Rep_HGBlock(nn.Module):
+    """
+    HG_Block of PPHGNetV2 with 2 convolutions and LightConv.
+
+    https://github.com/PaddlePaddle/PaddleDetection/blob/develop/ppdet/modeling/backbones/hgnet_v2.py
+    """
+
+    def __init__(self, c1, cm, c2, k=3, n=6, lightconv=False, shortcut=False, act=True):
+        """Initializes a CSP Bottleneck with 1 convolution using specified input and output channels."""
+        super().__init__()
+        block = RepLightConv if lightconv else Conv
+        self.m = nn.ModuleList(block(c1 if i == 0 else cm, cm, k=k, act=act) for i in range(n))
+        self.sc = Conv(c1 + n * cm, c2 // 2, 1, 1, act=act)  # squeeze conv
+        self.ec = Conv(c2 // 2, c2, 1, 1, act=act)  # excitation conv
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        """Forward pass of a PPHGNetV2 backbone layer."""
+        y = [x]
+        y.extend(m(y[-1]) for m in self.m)
+        y = self.ec(self.sc(torch.cat(y, 1)))
+        return y + x if self.add else y
+
+######################################## HGBlock with RepConv and GhostConv end ########################################

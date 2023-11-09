@@ -1,7 +1,7 @@
 视频链接:
-链接：https://pan.baidu.com/s/1ov0W-C_8y191k4qgQOrzOw?pwd=v0jp 
-提取码：v0jp # BiliBili 魔鬼面具Up
-1. 详细使用教程说明(必读) 2.添加我的github仓库上别的主干说明 3.需要自行添加模块的说明  5.关于BIFPN的说明
+链接：https://pan.baidu.com/s/1XgNR_yfN-pieo5i3eKnKPA?pwd=de1c 
+提取码：de1c # BiliBili 魔鬼面具Up
+1. 详细使用教程说明(必读) 2.添加我的github仓库上别的主干说明 3.需要自行添加模块的说明  4.关于BIFPN的说明
 
 链接：https://pan.baidu.com/s/1oaws7JlMcisIQ-6DzhFFFQ?pwd=gwrl 
 提取码：gwrl # BiliBili 魔鬼面具Up
@@ -54,4 +54,8 @@
 
 链接：https://pan.baidu.com/s/1LOJaHMCFaUCaD3L2B_TIkw?pwd=j75r 
 提取码：j75r # BiliBili 魔鬼面具Up
-1. 20231030版本更新说明
+1. 20231031版本更新说明
+
+链接：https://pan.baidu.com/s/1XTXuFF5JrgUf4X2o33le8g?pwd=3flg 
+提取码：3flg # BiliBili 魔鬼面具Up
+1. 20231107版本更新说明
