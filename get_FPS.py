@@ -23,7 +23,7 @@ from torch.cuda import amp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 
-from ultralytics.yolo.utils.torch_utils import select_device
+from ultralytics.utils.torch_utils import select_device
 from ultralytics import YOLO
 
 def get_weight_size(path):

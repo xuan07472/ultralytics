@@ -1,4 +1,4 @@
-# Ultralytics YOLO 🚀, AGPL-3.0 license
+# Ultralytics YOLO 🚀, AGPL-3.0 licenseget_num_params
 
 import contextlib
 from copy import deepcopy
@@ -8,14 +8,14 @@ import timm
 import torch
 import torch.nn as nn
 
-from ultralytics.nn.extra_modules import *
 from ultralytics.nn.modules import *
-from ultralytics.yolo.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
-from ultralytics.yolo.utils.checks import check_requirements, check_suffix, check_yaml
-from ultralytics.yolo.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
-from ultralytics.yolo.utils.plotting import feature_visualization
-from ultralytics.yolo.utils.torch_utils import (fuse_conv_and_bn, fuse_deconv_and_bn, initialize_weights,
-                                                intersect_dicts, make_divisible, model_info, scale_img, time_sync, get_num_params)
+from ultralytics.nn.extra_modules import *
+from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
+from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
+from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
+from ultralytics.utils.plotting import feature_visualization
+from ultralytics.utils.torch_utils import (fuse_conv_and_bn, fuse_deconv_and_bn, initialize_weights, intersect_dicts,
+                                           make_divisible, model_info, scale_img, time_sync, get_num_params)
 
 from ultralytics.nn.backbone.convnextv2 import *
 from ultralytics.nn.backbone.fasternet import *
@@ -26,6 +26,7 @@ from ultralytics.nn.backbone.revcol import *
 from ultralytics.nn.backbone.lsknet import *
 from ultralytics.nn.backbone.SwinTransformer import *
 from ultralytics.nn.backbone.repvit import *
+from ultralytics.nn.backbone.CSwomTramsformer import *
 
 try:
     import thop
@@ -34,14 +35,11 @@ except ImportError:
 
 
 class BaseModel(nn.Module):
-    """
-    The BaseModel class serves as a base class for all the models in the Ultralytics YOLO family.
-    """
+    """The BaseModel class serves as a base class for all the models in the Ultralytics YOLO family."""
 
     def forward(self, x, *args, **kwargs):
         """
-        Forward pass of the model on a single scale.
-        Wrapper for `_forward_once` method.
+        Forward pass of the model on a single scale. Wrapper for `_forward_once` method.
 
         Args:
             x (torch.Tensor | dict): The input image tensor or a dict including image tensor and gt labels.
@@ -97,6 +95,9 @@ class BaseModel(nn.Module):
                         y.append(i)
                     else:
                         y.append(None)
+                # for i in x:
+                #     if i is not None:
+                #         print(i.size())
                 x = x[-1]
             else:
                 x = m(x)  # run
@@ -107,9 +108,8 @@ class BaseModel(nn.Module):
 
     def _predict_augment(self, x):
         """Perform augmentations on input image x and return augmented inference."""
-        LOGGER.warning(
-            f'WARNING ⚠️ {self.__class__.__name__} has not supported augment inference yet! Now using single-scale inference instead.'
-        )
+        LOGGER.warning(f'WARNING ⚠️ {self.__class__.__name__} does not support augmented inference yet. '
+                       f'Reverting to single-scale inference instead.')
         return self._predict_once(x)
 
     def _profile_one_layer(self, m, x, dt):
@@ -166,7 +166,6 @@ class BaseModel(nn.Module):
                     m.forward = m.forward_fuse  # update forward
                 if hasattr(m, 'switch_to_deploy'):
                     m.switch_to_deploy()
-                
             self.info(verbose=verbose)
 
         return self
@@ -186,9 +185,10 @@ class BaseModel(nn.Module):
 
     def info(self, detailed=False, verbose=True, imgsz=640):
         """
-        Prints model information
+        Prints model information.
 
         Args:
+            detailed (bool): if True, prints out detailed information about the model. Defaults to False
             verbose (bool): if True, prints out the model information. Defaults to False
             imgsz (int): the size of the image that the model will be trained on. Defaults to 640
         """
@@ -196,14 +196,13 @@ class BaseModel(nn.Module):
 
     def _apply(self, fn):
         """
-        `_apply()` is a function that applies a function to all the tensors in the model that are not
-        parameters or registered buffers
+        Applies a function to all the tensors in the model that are not parameters or registered buffers.
 
         Args:
-            fn: the function to apply to the model
+            fn (function): the function to apply to the model
 
         Returns:
-            A model that is a Detect() object.
+            (BaseModel): An updated BaseModel object.
         """
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
@@ -215,10 +214,11 @@ class BaseModel(nn.Module):
         return self
 
     def load(self, weights, verbose=True):
-        """Load the weights into the model.
+        """
+        Load the weights into the model.
 
         Args:
-            weights (dict) or (torch.nn.Module): The pre-trained weights to be loaded.
+            weights (dict | torch.nn.Module): The pre-trained weights to be loaded.
             verbose (bool, optional): Whether to log the transfer progress. Defaults to True.
         """
         model = weights['model'] if isinstance(weights, dict) else weights  # torchvision models are not dicts
@@ -230,7 +230,7 @@ class BaseModel(nn.Module):
 
     def loss(self, batch, preds=None):
         """
-        Compute loss
+        Compute loss.
 
         Args:
             batch (dict): Batch to compute loss on
@@ -238,9 +238,12 @@ class BaseModel(nn.Module):
         """
         if not hasattr(self, 'criterion'):
             self.criterion = self.init_criterion()
-        return self.criterion(self.predict(batch['img']) if preds is None else preds, batch)
+
+        preds = self.forward(batch['img']) if preds is None else preds
+        return self.criterion(preds, batch)
 
     def init_criterion(self):
+        """Initialize the loss criterion for the BaseModel."""
         raise NotImplementedError('compute_loss() needs to be implemented by task heads')
 
 
@@ -248,6 +251,7 @@ class DetectionModel(BaseModel):
     """YOLOv8 detection model."""
 
     def __init__(self, cfg='yolov8n.yaml', ch=3, nc=None, verbose=True):  # model, input channels, number of classes
+        """Initialize the YOLOv8 detection model with the given config and parameters."""
         super().__init__()
         self.yaml = cfg if isinstance(cfg, dict) else yaml_model_load(cfg)  # cfg dict
 
@@ -261,7 +265,7 @@ class DetectionModel(BaseModel):
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
         if nc and nc != self.yaml['nc']:
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
-            self.yaml['nc'] = nc  # override yaml value
+            self.yaml['nc'] = nc  # override YAML value
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose, warehouse_manager=self.warehouse_manager)  # model, savelist
         self.names = {i: f'{i}' for i in range(self.yaml['nc'])}  # default names dict
         self.inplace = self.yaml.get('inplace', True)
@@ -291,6 +295,8 @@ class DetectionModel(BaseModel):
                     raise e
             self.stride = m.stride
             m.bias_init()  # only run once
+        else:
+            self.stride = torch.Tensor([32])  # default stride for i.e. RTDETR
 
         # Init weights, biases
         initialize_weights(self)
@@ -307,7 +313,6 @@ class DetectionModel(BaseModel):
         for si, fi in zip(s, f):
             xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
             yi = super().predict(xi)[0]  # forward
-            # cv2.imwrite(f'img_{si}.jpg', 255 * xi[0].cpu().numpy().transpose((1, 2, 0))[:, :, ::-1])  # save
             yi = self._descale_pred(yi, fi, si, img_size)
             y.append(yi)
         y = self._clip_augmented(y)  # clip augmented tails
@@ -325,7 +330,7 @@ class DetectionModel(BaseModel):
         return torch.cat((x, y, wh, cls), dim)
 
     def _clip_augmented(self, y):
-        """Clip YOLOv5 augmented inference tails."""
+        """Clip YOLO augmented inference tails."""
         nl = self.model[-1].nl  # number of detection layers (P3-P5)
         g = sum(4 ** x for x in range(nl))  # grid points
         e = 1  # exclude layer count
@@ -336,6 +341,7 @@ class DetectionModel(BaseModel):
         return y
 
     def init_criterion(self):
+        """Initialize the loss criterion for the DetectionModel."""
         return v8DetectionLoss(self)
     
     def net_update_temperature(self, temp):
@@ -352,14 +358,8 @@ class SegmentationModel(DetectionModel):
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
 
     def init_criterion(self):
+        """Initialize the loss criterion for the SegmentationModel."""
         return v8SegmentationLoss(self)
-
-    def _predict_augment(self, x):
-        """Perform augmentations on input image x and return augmented inference."""
-        LOGGER.warning(
-            f'WARNING ⚠️ {self.__class__.__name__} has not supported augment inference yet! Now using single-scale inference instead.'
-        )
-        return self._predict_once(x)
 
 
 class PoseModel(DetectionModel):
@@ -375,44 +375,17 @@ class PoseModel(DetectionModel):
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
 
     def init_criterion(self):
+        """Initialize the loss criterion for the PoseModel."""
         return v8PoseLoss(self)
-
-    def _predict_augment(self, x):
-        """Perform augmentations on input image x and return augmented inference."""
-        LOGGER.warning(
-            f'WARNING ⚠️ {self.__class__.__name__} has not supported augment inference yet! Now using single-scale inference instead.'
-        )
-        return self._predict_once(x)
 
 
 class ClassificationModel(BaseModel):
     """YOLOv8 classification model."""
 
-    def __init__(self,
-                 cfg=None,
-                 model=None,
-                 ch=3,
-                 nc=None,
-                 cutoff=10,
-                 verbose=True):  # yaml, model, channels, number of classes, cutoff index, verbose flag
+    def __init__(self, cfg='yolov8n-cls.yaml', ch=3, nc=None, verbose=True):
+        """Init ClassificationModel with YAML, channels, number of classes, verbose flag."""
         super().__init__()
-        self._from_detection_model(model, nc, cutoff) if model is not None else self._from_yaml(cfg, ch, nc, verbose)
-
-    def _from_detection_model(self, model, nc=1000, cutoff=10):
-        """Create a YOLOv5 classification model from a YOLOv5 detection model."""
-        from ultralytics.nn.autobackend import AutoBackend
-        if isinstance(model, AutoBackend):
-            model = model.model  # unwrap DetectMultiBackend
-        model.model = model.model[:cutoff]  # backbone
-        m = model.model[-1]  # last layer
-        ch = m.conv.in_channels if hasattr(m, 'conv') else m.cv1.conv.in_channels  # ch into module
-        c = Classify(ch, nc)  # Classify()
-        c.i, c.f, c.type = m.i, m.f, 'models.common.Classify'  # index, from, type
-        model.model[-1] = c  # replace
-        self.model = model.model
-        self.stride = model.stride
-        self.save = []
-        self.nc = nc
+        self._from_yaml(cfg, ch, nc, verbose)
 
     def _from_yaml(self, cfg, ch, nc, verbose):
         """Set YOLOv8 model configurations and define the model architecture."""
@@ -422,7 +395,7 @@ class ClassificationModel(BaseModel):
         ch = self.yaml['ch'] = self.yaml.get('ch', ch)  # input channels
         if nc and nc != self.yaml['nc']:
             LOGGER.info(f"Overriding model.yaml nc={self.yaml['nc']} with nc={nc}")
-            self.yaml['nc'] = nc  # override yaml value
+            self.yaml['nc'] = nc  # override YAML value
         elif not nc and not self.yaml.get('nc', None):
             raise ValueError('nc not specified. Must specify nc in model.yaml or function arguments.')
         self.model, self.save = parse_model(deepcopy(self.yaml), ch=ch, verbose=verbose)  # model, savelist
@@ -452,22 +425,59 @@ class ClassificationModel(BaseModel):
                     m[i] = nn.Conv2d(m[i].in_channels, nc, m[i].kernel_size, m[i].stride, bias=m[i].bias is not None)
 
     def init_criterion(self):
-        """Compute the classification loss between predictions and true labels."""
+        """Initialize the loss criterion for the ClassificationModel."""
         return v8ClassificationLoss()
 
 
 class RTDETRDetectionModel(DetectionModel):
+    """
+    RTDETR (Real-time DEtection and Tracking using Transformers) Detection Model class.
+
+    This class is responsible for constructing the RTDETR architecture, defining loss functions, and facilitating both
+    the training and inference processes. RTDETR is an object detection and tracking model that extends from the
+    DetectionModel base class.
+
+    Attributes:
+        cfg (str): The configuration file path or preset string. Default is 'rtdetr-l.yaml'.
+        ch (int): Number of input channels. Default is 3 (RGB).
+        nc (int, optional): Number of classes for object detection. Default is None.
+        verbose (bool): Specifies if summary statistics are shown during initialization. Default is True.
+
+    Methods:
+        init_criterion: Initializes the criterion used for loss calculation.
+        loss: Computes and returns the loss during training.
+        predict: Performs a forward pass through the network and returns the output.
+    """
 
     def __init__(self, cfg='rtdetr-l.yaml', ch=3, nc=None, verbose=True):
+        """
+        Initialize the RTDETRDetectionModel.
+
+        Args:
+            cfg (str): Configuration file name or path.
+            ch (int): Number of input channels.
+            nc (int, optional): Number of classes. Defaults to None.
+            verbose (bool, optional): Print additional information during initialization. Defaults to True.
+        """
         super().__init__(cfg=cfg, ch=ch, nc=nc, verbose=verbose)
 
     def init_criterion(self):
-        """Compute the classification loss between predictions and true labels."""
-        from ultralytics.vit.utils.loss import RTDETRDetectionLoss
+        """Initialize the loss criterion for the RTDETRDetectionModel."""
+        from ultralytics.models.utils.loss import RTDETRDetectionLoss
 
-        return RTDETRDetectionLoss(num_classes=self.nc, use_vfl=True)
+        return RTDETRDetectionLoss(nc=self.nc, use_vfl=True)
 
     def loss(self, batch, preds=None):
+        """
+        Compute the loss for the given batch of data.
+
+        Args:
+            batch (dict): Dictionary containing image and label data.
+            preds (torch.Tensor, optional): Precomputed model predictions. Defaults to None.
+
+        Returns:
+            (tuple): A tuple containing the total loss and main three losses in a tensor.
+        """
         if not hasattr(self, 'criterion'):
             self.criterion = self.init_criterion()
 
@@ -475,42 +485,46 @@ class RTDETRDetectionModel(DetectionModel):
         # NOTE: preprocess gt_bbox and gt_labels to list.
         bs = len(img)
         batch_idx = batch['batch_idx']
-        gt_bbox, gt_class = [], []
-        for i in range(bs):
-            gt_bbox.append(batch['bboxes'][batch_idx == i].to(img.device))
-            gt_class.append(batch['cls'][batch_idx == i].to(device=img.device, dtype=torch.long))
-        targets = {'cls': gt_class, 'bboxes': gt_bbox}
+        gt_groups = [(batch_idx == i).sum().item() for i in range(bs)]
+        targets = {
+            'cls': batch['cls'].to(img.device, dtype=torch.long).view(-1),
+            'bboxes': batch['bboxes'].to(device=img.device),
+            'batch_idx': batch_idx.to(img.device, dtype=torch.long).view(-1),
+            'gt_groups': gt_groups}
 
         preds = self.predict(img, batch=targets) if preds is None else preds
-        dec_out_bboxes, dec_out_logits, enc_topk_bboxes, enc_topk_logits, dn_meta = preds
-        # NOTE: `dn_meta` means it's eval mode, loss calculation for eval mode is not supported.
+        dec_bboxes, dec_scores, enc_bboxes, enc_scores, dn_meta = preds if self.training else preds[1]
         if dn_meta is None:
-            return 0, torch.zeros(3, device=dec_out_bboxes.device)
-        dn_out_bboxes, dec_out_bboxes = torch.split(dec_out_bboxes, dn_meta['dn_num_split'], dim=2)
-        dn_out_logits, dec_out_logits = torch.split(dec_out_logits, dn_meta['dn_num_split'], dim=2)
+            dn_bboxes, dn_scores = None, None
+        else:
+            dn_bboxes, dec_bboxes = torch.split(dec_bboxes, dn_meta['dn_num_split'], dim=2)
+            dn_scores, dec_scores = torch.split(dec_scores, dn_meta['dn_num_split'], dim=2)
 
-        out_bboxes = torch.cat([enc_topk_bboxes.unsqueeze(0), dec_out_bboxes])
-        out_logits = torch.cat([enc_topk_logits.unsqueeze(0), dec_out_logits])
+        dec_bboxes = torch.cat([enc_bboxes.unsqueeze(0), dec_bboxes])  # (7, bs, 300, 4)
+        dec_scores = torch.cat([enc_scores.unsqueeze(0), dec_scores])
 
-        loss = self.criterion((out_bboxes, out_logits),
+        loss = self.criterion((dec_bboxes, dec_scores),
                               targets,
-                              dn_out_bboxes=dn_out_bboxes,
-                              dn_out_logits=dn_out_logits,
+                              dn_bboxes=dn_bboxes,
+                              dn_scores=dn_scores,
                               dn_meta=dn_meta)
-        return sum(loss.values()), torch.as_tensor([loss[k].detach() for k in ['loss_giou', 'loss_class', 'loss_bbox']])
+        # NOTE: There are like 12 losses in RTDETR, backward with all losses but only show the main three losses.
+        return sum(loss.values()), torch.as_tensor([loss[k].detach() for k in ['loss_giou', 'loss_class', 'loss_bbox']],
+                                                   device=img.device)
 
-    def predict(self, x, profile=False, visualize=False, batch=None):
+    def predict(self, x, profile=False, visualize=False, batch=None, augment=False):
         """
-        Perform a forward pass through the network.
+        Perform a forward pass through the model.
 
         Args:
-            x (torch.Tensor): The input tensor to the model
-            profile (bool):  Print the computation time of each layer if True, defaults to False.
-            visualize (bool): Save the feature maps of the model if True, defaults to False
-            batch (dict): A dict including gt boxes and labels from dataloader.
+            x (torch.Tensor): The input tensor.
+            profile (bool, optional): If True, profile the computation time for each layer. Defaults to False.
+            visualize (bool, optional): If True, save feature maps for visualization. Defaults to False.
+            batch (dict, optional): Ground truth data for evaluation. Defaults to None.
+            augment (bool, optional): If True, perform data augmentation during inference. Defaults to False.
 
         Returns:
-            (torch.Tensor): The last output of the model.
+            (torch.Tensor): Model's output tensor.
         """
         y, dt = [], []  # outputs
         for m in self.model[:-1]:  # except the head part
@@ -535,7 +549,7 @@ class Ensemble(nn.ModuleList):
         super().__init__()
 
     def forward(self, x, augment=False, profile=False, visualize=False):
-        """Function generates the YOLOv5 network's final layer."""
+        """Function generates the YOLO network's final layer."""
         y = [module(x, augment, profile, visualize)[0] for module in self]
         # y = torch.stack(y).max(0)[0]  # max ensemble
         # y = torch.stack(y).mean(0)  # mean ensemble
@@ -544,6 +558,47 @@ class Ensemble(nn.ModuleList):
 
 
 # Functions ------------------------------------------------------------------------------------------------------------
+
+
+@contextlib.contextmanager
+def temporary_modules(modules=None):
+    """
+    Context manager for temporarily adding or modifying modules in Python's module cache (`sys.modules`).
+
+    This function can be used to change the module paths during runtime. It's useful when refactoring code,
+    where you've moved a module from one location to another, but you still want to support the old import
+    paths for backwards compatibility.
+
+    Args:
+        modules (dict, optional): A dictionary mapping old module paths to new module paths.
+
+    Example:
+        ```python
+        with temporary_modules({'old.module.path': 'new.module.path'}):
+            import old.module.path  # this will now import new.module.path
+        ```
+
+    Note:
+        The changes are only in effect inside the context manager and are undone once the context manager exits.
+        Be aware that directly manipulating `sys.modules` can lead to unpredictable results, especially in larger
+        applications or libraries. Use this function with caution.
+    """
+    if not modules:
+        modules = {}
+
+    import importlib
+    import sys
+    try:
+        # Set modules in sys.modules under their old name
+        for old, new in modules.items():
+            sys.modules[old] = importlib.import_module(new)
+
+        yield
+    finally:
+        # Remove the temporary module paths
+        for old in modules:
+            if old in sys.modules:
+                del sys.modules[old]
 
 
 def torch_safe_load(weight):
@@ -558,12 +613,17 @@ def torch_safe_load(weight):
     Returns:
         (dict): The loaded PyTorch model.
     """
-    from ultralytics.yolo.utils.downloads import attempt_download_asset
+    from ultralytics.utils.downloads import attempt_download_asset
 
     check_suffix(file=weight, suffix='.pt')
     file = attempt_download_asset(weight)  # search online if missing locally
     try:
-        return torch.load(file, map_location='cpu'), file  # load
+        with temporary_modules({
+                'ultralytics.yolo.utils': 'ultralytics.utils',
+                'ultralytics.yolo.v8': 'ultralytics.models.yolo',
+                'ultralytics.yolo.data': 'ultralytics.data'}):  # for legacy 8.0 Classify and Pose models
+            return torch.load(file, map_location='cpu'), file  # load
+
     except ModuleNotFoundError as e:  # e.name is missing module name
         if e.name == 'models':
             raise TypeError(
@@ -600,12 +660,12 @@ def attempt_load_weights(weights, device=None, inplace=True, fuse=False):
         # Append
         ensemble.append(model.fuse().eval() if fuse and hasattr(model, 'fuse') else model.eval())  # model in eval mode
 
-    # Module compatibility updates
+    # Module updates
     for m in ensemble.modules():
         t = type(m)
         if t in (nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, 
                  Detect_AFPN_P345_Custom, Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment):
-            m.inplace = inplace  # torch 1.7.0 compatibility
+            m.inplace = inplace
         elif t is nn.Upsample and not hasattr(m, 'recompute_scale_factor'):
             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
 
@@ -637,12 +697,12 @@ def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
 
     model = model.fuse().eval() if fuse and hasattr(model, 'fuse') else model.eval()  # model in eval mode
 
-    # Module compatibility updates
+    # Module updates
     for m in model.modules():
         t = type(m)
         if t in (nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom,
                  DetectAux, Detect_Efficient, Segment):
-            m.inplace = inplace  # torch 1.7.0 compatibility
+            m.inplace = inplace
         elif t is nn.Upsample and not hasattr(m, 'recompute_scale_factor'):
             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
 
@@ -651,13 +711,12 @@ def attempt_load_one_weight(weight, device=None, inplace=True, fuse=False):
 
 
 def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, input_channels(3)
-    # Parse a YOLO model.yaml dictionary into a PyTorch model
+    """Parse a YOLO model.yaml dictionary into a PyTorch model."""
     import ast
 
     # Args
     max_channels = float('inf')
-    nc, act, scales = (d.get(x) for x in ('nc', 'act', 'scales'))
-    
+    nc, act, scales = (d.get(x) for x in ('nc', 'activation', 'scales'))
     depth, width, kpt_shape = (d.get(x, 1.0) for x in ('depth_multiple', 'width_multiple', 'kpt_shape'))
     if scales:
         scale = d.get('scale')
@@ -672,7 +731,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
             LOGGER.info(f"{colorstr('activation:')} {act}")  # print
 
     if verbose:
-        LOGGER.info(f"\n{'':>3}{'from':>20}{'n':>3}{'params':>10}  {'module':<60}{'arguments':<30}")
+        LOGGER.info(f"\n{'':>3}{'from':>20}{'n':>3}{'params':>10}  {'module':<45}{'arguments':<30}")
     ch = [ch]
     layers, save, c2 = [], [], ch[-1]  # layers, savelist, ch out
     is_backbone = False
@@ -687,7 +746,6 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
             m = getattr(torch.nn, m[3:]) if 'nn.' in m else globals()[m]  # get module
         except:
             pass
-        
         for j, a in enumerate(args):
             if isinstance(a, str):
                 with contextlib.suppress(ValueError):
@@ -704,7 +762,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                  DCNv2, C3_DCNv2, C2f_DCNv2, DCNV3_YOLO, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv,
                  OREPA, OREPA_LargeConv, RepVGGBlock_OREPA, C3_OREPA, C2f_OREPA, C3_DBB, C3_REPVGGOREPA, C2f_REPVGGOREPA,
                  C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, C3_MSBlock, C2f_MSBlock,
-                 C3_DLKA, C2f_DLKA, CSPStage, SPDConv, RepBlock, C3_EMBC, C2f_EMBC, SPPF_LSKA, C3_DAttention, C2f_DAttention):
+                 C3_DLKA, C2f_DLKA, CSPStage, SPDConv, RepBlock, C3_EMBC, C2f_EMBC, SPPF_LSKA, C3_DAttention, C2f_DAttention,
+                 C3_Parc, C2f_Parc, C3_DWR, C2f_DWR):
             if args[0] == 'head_channel':
                 args[0] = d[args[0]]
             c1, c2 = ch[f], args[0]
@@ -723,7 +782,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                      C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, C2f_KW, C3_KW, C2f_DySnakeConv, C3_DySnakeConv,
                      C3_DCNv2, C2f_DCNv2, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv, C3_OREPA, C2f_OREPA, C3_DBB,
                      C3_REPVGGOREPA, C2f_REPVGGOREPA, C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, 
-                     C3_MSBlock, C2f_MSBlock, C3_DLKA, C2f_DLKA, CSPStage, RepBlock, C3_EMBC, C2f_EMBC, C3_DAttention, C2f_DAttention):
+                     C3_MSBlock, C2f_MSBlock, C3_DLKA, C2f_DLKA, CSPStage, RepBlock, C3_EMBC, C2f_EMBC, C3_DAttention, C2f_DAttention,
+                     C3_Parc, C2f_Parc, C3_DWR, C2f_DWR):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
@@ -734,12 +794,13 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
             if m is HGBlock:
                 args.insert(4, n)  # number of repeats
                 n = 1
+
         elif m is nn.BatchNorm2d:
             args = [ch[f]]
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
         elif m in (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom, 
-                   Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Pose, RTDETRDecoder):
+                   Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Pose):
             args.append([ch[x] for x in f])
             if m is Segment:
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
@@ -747,6 +808,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
             args[0] = d[args[0]]
             c1, c2 = [ch[x] for x in f], (sum([ch[x] for x in f]) if args[0] == 'concat' else ch[f[0]])
             args = [c1, args[0]]
+        elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
+            args.insert(1, [ch[x] for x in f])
         elif isinstance(m, str):
             t = m
             m = timm.create_model(m, pretrained=args[0], features_only=True)
@@ -759,7 +822,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                    RevCol,
                    lsknet_t, lsknet_s,
                    SwinTransformer_Tiny,
-                   repvit_m0_9, repvit_m1_0, repvit_m1_1, repvit_m1_5, repvit_m2_3
+                   repvit_m0_9, repvit_m1_0, repvit_m1_1, repvit_m1_5, repvit_m2_3,
+                   CSWin_tiny, CSWin_small, CSWin_base, CSWin_large
                    }:
             if m is RevCol:
                 args[1] = [make_divisible(min(k, max_channels) * width, 8) for k in args[1]]
@@ -818,7 +882,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
         m.np = sum(x.numel() for x in m_.parameters())  # number params
         m_.i, m_.f, m_.type = i + 4 if is_backbone else i, f, t  # attach index, 'from' index, type
         if verbose:
-            LOGGER.info(f'{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<60}{str(args):<30}')  # print
+            LOGGER.info(f'{i:>3}{str(f):>20}{n_:>3}{m.np:10.0f}  {t:<45}{str(args):<30}')  # print
         save.extend(x % (i + 4 if is_backbone else i) for x in ([f] if isinstance(f, int) else f) if x != -1)  # append to savelist
         layers.append(m_)
         if i == 0:
@@ -840,7 +904,7 @@ def yaml_model_load(path):
     if path.stem in (f'yolov{d}{x}6' for x in 'nsmlx' for d in (5, 8)):
         new_stem = re.sub(r'(\d+)([nslmx])6(.+)?$', r'\1\2-p6\3', path.stem)
         LOGGER.warning(f'WARNING ⚠️ Ultralytics YOLO P6 models now use -p6 suffix. Renaming {path.stem} to {new_stem}.')
-        path = path.with_stem(new_stem)
+        path = path.with_name(new_stem + path.suffix)
 
     unified_path = re.sub(r'(\d+)([nslmx])(.+)?$', r'\1\3', str(path))  # i.e. yolov8x.yaml -> yolov8.yaml
     yaml_file = check_yaml(unified_path, hard=False) or check_yaml(path)
@@ -852,12 +916,12 @@ def yaml_model_load(path):
 
 def guess_model_scale(model_path):
     """
-    Takes a path to a YOLO model's YAML file as input and extracts the size character of the model's scale.
-    The function uses regular expression matching to find the pattern of the model scale in the YAML file name,
-    which is denoted by n, s, m, l, or x. The function returns the size character of the model scale as a string.
+    Takes a path to a YOLO model's YAML file as input and extracts the size character of the model's scale. The function
+    uses regular expression matching to find the pattern of the model scale in the YAML file name, which is denoted by
+    n, s, m, l, or x. The function returns the size character of the model scale as a string.
 
     Args:
-        model_path (str) or (Path): The path to the YOLO model's YAML file.
+        model_path (str | Path): The path to the YOLO model's YAML file.
 
     Returns:
         (str): The size character of the model's scale, which can be n, s, m, l, or x.
@@ -873,7 +937,7 @@ def guess_model_task(model):
     Guess the task of a PyTorch model from its architecture or configuration.
 
     Args:
-        model (nn.Module) or (dict): PyTorch model or model configuration in YAML format.
+        model (nn.Module | dict): PyTorch model or model configuration in YAML format.
 
     Returns:
         (str): Task of the model ('detect', 'segment', 'classify', 'pose').
@@ -909,9 +973,9 @@ def guess_model_task(model):
                 return cfg2task(eval(x))
 
         for m in model.modules():
-            if isinstance(m, (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, 
+            if isinstance(m, Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, 
                               Detect_AFPN_P345, Detect_AFPN_P345_Custom, Detect_Efficient, DetectAux,
-                              Detect_DyHeadWithDCNV3)):
+                              Detect_DyHeadWithDCNV3):
                 return 'detect'
             elif isinstance(m, Segment):
                 return 'segment'

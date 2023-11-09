@@ -12,7 +12,8 @@ from .kernel_warehouse import KWConv
 from .dynamic_snake_conv import DySnakeConv
 from .ops_dcnv3.modules import DCNv3, DCNv3_DyHead
 from .orepa import *
-from ultralytics.yolo.utils.torch_utils import make_divisible
+from ultralytics.utils.torch_utils import make_divisible
+from timm.layers import trunc_normal_
 
 __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Faster', 'C3_ODConv', 'C2f_ODConv', 'Partial_conv3', 'C2f_Faster_EMA', 'C3_Faster_EMA', 'C2f_DBB',
            'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
@@ -21,7 +22,7 @@ __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Fa
            'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'C3_DCNv2_Dynamic', 'C2f_DCNv2_Dynamic',
            'SimFusion_3in', 'SimFusion_4in', 'IFM', 'InjectionMultiSum_Auto_pool', 'PyramidPoolAgg', 'AdvPoolFusion', 'TopBasicLayer',
            'C3_ContextGuided', 'C2f_ContextGuided', 'C3_MSBlock', 'C2f_MSBlock', 'ContextGuidedBlock_Down', 'C3_DLKA', 'C2f_DLKA', 'CSPStage', 'SPDConv',
-           'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC', 'SPPF_LSKA', 'C3_DAttention', 'C2f_DAttention']
+           'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC', 'SPPF_LSKA', 'C3_DAttention', 'C2f_DAttention', 'C3_Parc', 'C2f_Parc', 'C3_DWR', 'C2f_DWR']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -2530,3 +2531,112 @@ class C2f_DAttention(C2f):
         self.m = nn.ModuleList(Bottleneck_DAttention(self.c, self.c, fmapsize, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
 ######################################## C3 C2f DCNV2_Dynamic end ########################################
+
+######################################## C3 C2f ParC_op start ########################################
+
+class ParC_operator(nn.Module):
+    def __init__(self, dim, type, global_kernel_size, use_pe=True, groups=1):
+        super().__init__()
+        self.type = type  # H or W
+        self.dim = dim
+        self.use_pe = use_pe
+        self.global_kernel_size = global_kernel_size
+        self.kernel_size = (global_kernel_size, 1) if self.type == 'H' else (1, global_kernel_size)
+        self.gcc_conv = nn.Conv2d(dim, dim, kernel_size=self.kernel_size, groups=dim)
+        if use_pe:
+            if self.type=='H':
+                self.pe = nn.Parameter(torch.randn(1, dim, self.global_kernel_size, 1))
+            elif self.type=='W':
+                self.pe = nn.Parameter(torch.randn(1, dim, 1, self.global_kernel_size))
+            trunc_normal_(self.pe, std=.02)
+
+    def forward(self, x):
+        if self.use_pe:
+            x = x + self.pe.expand(1, self.dim, self.global_kernel_size, self.global_kernel_size)
+
+        x_cat = torch.cat((x, x[:, :, :-1, :]), dim=2) if self.type == 'H' else torch.cat((x, x[:, :, :, :-1]), dim=3)
+        x = self.gcc_conv(x_cat)
+
+        return x
+
+class ParConv(nn.Module):
+    def __init__(self, dim, fmapsize, use_pe=True, groups=1) -> None:
+        super().__init__()
+        
+        self.parc_H = ParC_operator(dim // 2, 'H', fmapsize[0], use_pe, groups = groups)
+        self.parc_W = ParC_operator(dim // 2, 'W', fmapsize[1], use_pe, groups = groups)
+        self.bn = nn.BatchNorm2d(dim)
+        self.act = Conv.default_act
+    
+    def forward(self, x):
+        out_H, out_W = torch.chunk(x, 2, dim=1)
+        out_H, out_W = self.parc_H(out_H), self.parc_W(out_W)
+        out = torch.cat((out_H, out_W), dim=1)
+        out = self.bn(out)
+        out = self.act(out)
+        return out
+
+class Bottleneck_ParC(nn.Module):
+    """Standard bottleneck."""
+
+    def __init__(self, c1, c2, fmapsize, shortcut=True, g=1, k=(3, 3), e=0.5):
+        """Initializes a bottleneck module with given input/output channels, shortcut option, group, kernels, and
+        expansion.
+        """
+        super().__init__()
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, k[0], 1)
+        if c_ == c2:
+            self.cv2 = ParConv(c2, fmapsize, groups=g)
+        else:
+            self.cv2 = Conv(c_, c2, k[1], 1, g=g)
+        self.add = shortcut and c1 == c2
+
+    def forward(self, x):
+        """'forward()' applies the YOLO FPN to input data."""
+        return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
+
+class C3_Parc(C3):
+    def __init__(self, c1, c2, n=1, fmapsize=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_ParC(c_, c_, fmapsize, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_Parc(C2f):
+    def __init__(self, c1, c2, n=1, fmapsize=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_ParC(self.c, self.c, fmapsize, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f Dilation-wise Residual end ########################################
+
+class DWR(nn.Module):
+    def __init__(self, dim) -> None:
+        super().__init__()
+
+        self.conv_3x3 = Conv(dim, dim // 2, 3)
+        
+        self.conv_3x3_d1 = Conv(dim // 2, dim, 3, d=1)
+        self.conv_3x3_d3 = Conv(dim // 2, dim // 2, 3, d=3)
+        self.conv_3x3_d5 = Conv(dim // 2, dim // 2, 3, d=5)
+        
+        self.conv_1x1 = Conv(dim * 2, dim, k=1)
+        
+    def forward(self, x):
+        conv_3x3 = self.conv_3x3(x)
+        x1, x2, x3 = self.conv_3x3_d1(conv_3x3), self.conv_3x3_d3(conv_3x3), self.conv_3x3_d5(conv_3x3)
+        x_out = torch.cat([x1, x2, x3], dim=1)
+        x_out = self.conv_1x1(x_out) + x
+        return x_out
+
+class C3_DWR(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(DWR(c_) for _ in range(n)))
+
+class C2f_DWR(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(DWR(self.c) for _ in range(n))
+
+######################################## C3 C2f Dilation-wise Residual start ########################################

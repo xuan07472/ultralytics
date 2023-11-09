@@ -7,7 +7,7 @@ from ..modules import Conv, DFL, C2f, RepConv
 from .block import *
 from .rep_block import *
 from .afpn import AFPN_P345, AFPN_P345_Custom, AFPN_P2345, AFPN_P2345_Custom
-from ultralytics.yolo.utils.tal import dist2bbox, make_anchors
+from ultralytics.utils.tal import dist2bbox, make_anchors
 
 __all__ = ['Detect_DyHead', 'Detect_DyHeadWithDCNV3', 'Detect_AFPN_P345', 'Detect_AFPN_P345_Custom', 'Detect_AFPN_P2345', 'Detect_AFPN_P2345_Custom', 'Detect_Efficient', 'DetectAux']
 
