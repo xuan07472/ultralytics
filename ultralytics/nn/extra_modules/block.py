@@ -15,9 +15,9 @@ from .orepa import *
 from ultralytics.yolo.utils.torch_utils import make_divisible
 
 __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Faster', 'C3_ODConv', 'C2f_ODConv', 'Partial_conv3', 'C2f_Faster_EMA', 'C3_Faster_EMA', 'C2f_DBB',
-           'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
+           'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'C2f_2SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
            'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA', 'C3_KW', 'C2f_KW',
-           'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3', 'FocalModulation',
+           'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'C2f_2DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3', 'C2f_2DCNv3', 'FocalModulation',
            'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'C3_DCNv2_Dynamic', 'C2f_DCNv2_Dynamic',
            'SimFusion_3in', 'SimFusion_4in', 'IFM', 'InjectionMultiSum_Auto_pool', 'PyramidPoolAgg', 'AdvPoolFusion', 'TopBasicLayer',
            'C3_ContextGuided', 'C2f_ContextGuided', 'C3_MSBlock', 'C2f_MSBlock', 'ContextGuidedBlock_Down', 'C3_DLKA', 'C2f_DLKA', 'CSPStage', 'SPDConv',
@@ -918,6 +918,14 @@ class Bottleneck_SCConv(Bottleneck):
         self.cv1 = Conv(c1, c_, k[0], 1)
         self.cv2 = SCConv(c_, c2, g=g)
 
+class Bottleneck_2SCConv(Bottleneck):
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        # self.cv1 = Conv(c1, c_, k[0], 1)
+        self.cv1 = SCConv(c1, c_)
+        self.cv2 = SCConv(c_, c2, g=g)
+
 class C3_SCConv(C3):
     def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
         super().__init__(c1, c2, n, shortcut, g, e)
@@ -928,6 +936,11 @@ class C2f_SCConv(C2f):
     def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(Bottleneck_SCConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+class C2f_2SCConv(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_2SCConv(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
 ######################################## SCConv end ########################################
 
@@ -1359,6 +1372,15 @@ class Bottleneck_DCNV2(Bottleneck):
         c_ = int(c2 * e)  # hidden channels
         self.cv2 = DCNv2(c_, c2, k[1], 1)
 
+class Bottleneck_2DCNV2(Bottleneck):
+    """Standard bottleneck with 2 DCNV2."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = DCNv2(c1, c_, k[0], 1)
+        self.cv2 = DCNv2(c_, c2, k[1], 1)
+
 class C3_DCNv2(C3):
     def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
         super().__init__(c1, c2, n, shortcut, g, e)
@@ -1370,6 +1392,10 @@ class C2f_DCNv2(C2f):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(Bottleneck_DCNV2(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
+class C2f_2DCNv2(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_2DCNV2(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 ######################################## C3 C2f DCNV2 end ########################################
 
 ######################################## C3 C2f DCNV3 start ########################################
@@ -1401,6 +1427,15 @@ class Bottleneck_DCNV3(Bottleneck):
         c_ = int(c2 * e)  # hidden channels
         self.cv2 = DCNV3_YOLO(c_, c2, k[1])
 
+class Bottleneck_2DCNV3(Bottleneck):
+    """Standard bottleneck with DCNV3."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv1 = DCNV3_YOLO(c1, c_, k[0])
+        self.cv2 = DCNV3_YOLO(c_, c2, k[1])
+
 class C3_DCNv3(C3):
     def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
         super().__init__(c1, c2, n, shortcut, g, e)
@@ -1412,6 +1447,10 @@ class C2f_DCNv3(C2f):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(Bottleneck_DCNV3(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
+class C2f_2DCNv3(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_2DCNV3(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 ######################################## C3 C2f DCNV3 end ########################################
 
 ######################################## FocalModulation start ########################################
