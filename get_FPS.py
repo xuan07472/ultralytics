@@ -47,12 +47,13 @@ if __name__ == '__main__':
     weights = opt.weights
     pretrained = weights.endswith('.pt')
     if pretrained:
-        model = attempt_load_weights(weights, device=device)
+        model = attempt_load_weights(weights, device=device, fuse=True)
         print(f'Loaded {weights}')  # report
     else:
         assert weights.endswith('.pt'), "compress need weights."
     
     model = model.to(device)
+    model.fuse()
     example_inputs = torch.randn((opt.batch, 3, *opt.imgs)).to(device)
     
     if opt.half:

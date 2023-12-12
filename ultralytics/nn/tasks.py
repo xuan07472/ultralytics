@@ -27,6 +27,7 @@ from ultralytics.nn.backbone.lsknet import *
 from ultralytics.nn.backbone.SwinTransformer import *
 from ultralytics.nn.backbone.repvit import *
 from ultralytics.nn.backbone.CSwomTramsformer import *
+from ultralytics.nn.backbone.UniRepLKNet import *
 
 try:
     import thop
@@ -765,7 +766,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                  C3_DLKA, C2f_DLKA, CSPStage, SPDConv, RepBlock, C3_EMBC, C2f_EMBC, SPPF_LSKA, C3_DAttention, C2f_DAttention,
                  C3_Parc, C2f_Parc, C3_DWR, C2f_DWR, RFAConv, RFCAConv, RFCBAMConv, C3_RFAConv, C2f_RFAConv,
                  C3_RFCBAMConv, C2f_RFCBAMConv, C3_RFCAConv, C2f_RFCAConv, C3_FocusedLinearAttention, C2f_FocusedLinearAttention,
-                 C3_AKConv, C2f_AKConv, AKConv, C3_MLCA, C2f_MLCA):
+                 C3_AKConv, C2f_AKConv, AKConv, C3_MLCA, C2f_MLCA,
+                 C3_UniRepLKNetBlock, C2f_UniRepLKNetBlock, C3_DRB, C2f_DRB, C3_DWR_DRB, C2f_DWR_DRB):
             if args[0] == 'head_channel':
                 args[0] = d[args[0]]
             c1, c2 = ch[f], args[0]
@@ -786,7 +788,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                      C3_REPVGGOREPA, C2f_REPVGGOREPA, C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, 
                      C3_MSBlock, C2f_MSBlock, C3_DLKA, C2f_DLKA, CSPStage, RepBlock, C3_EMBC, C2f_EMBC, C3_DAttention, C2f_DAttention,
                      C3_Parc, C2f_Parc, C3_DWR, C2f_DWR, C3_RFAConv, C2f_RFAConv, C3_RFCBAMConv, C2f_RFCBAMConv, C3_RFCAConv, C2f_RFCAConv,
-                     C3_FocusedLinearAttention, C2f_FocusedLinearAttention, C3_AKConv, C2f_AKConv, C3_MLCA, C2f_MLCA):
+                     C3_FocusedLinearAttention, C2f_FocusedLinearAttention, C3_AKConv, C2f_AKConv, C3_MLCA, C2f_MLCA,
+                     C3_UniRepLKNetBlock, C2f_UniRepLKNetBlock, C3_DRB, C2f_DRB, C3_DWR_DRB, C2f_DWR_DRB):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
@@ -832,7 +835,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                    lsknet_t, lsknet_s,
                    SwinTransformer_Tiny,
                    repvit_m0_9, repvit_m1_0, repvit_m1_1, repvit_m1_5, repvit_m2_3,
-                   CSWin_tiny, CSWin_small, CSWin_base, CSWin_large
+                   CSWin_tiny, CSWin_small, CSWin_base, CSWin_large,
+                   unireplknet_a, unireplknet_f, unireplknet_p, unireplknet_n, unireplknet_t, unireplknet_s, unireplknet_b, unireplknet_l, unireplknet_xl
                    }:
             if m is RevCol:
                 args[1] = [make_divisible(min(k, max_channels) * width, 8) for k in args[1]]
