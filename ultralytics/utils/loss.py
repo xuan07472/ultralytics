@@ -9,7 +9,7 @@ from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.utils.tal import TaskAlignedAssigner, dist2bbox, make_anchors
 from ultralytics.utils.atss import ATSSAssigner, generate_anchors
 
-from .metrics import bbox_iou, bbox_mpdiou, wasserstein_loss
+from .metrics import bbox_iou, bbox_mpdiou, bbox_inner_iou, bbox_inner_mpdiou, wasserstein_loss
 from .tal import bbox2dist
 
 import math
@@ -134,7 +134,9 @@ class BboxLoss(nn.Module):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
         iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        # iou = bbox_inner_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True, ratio=0.7)
         # iou = bbox_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw)
+        # iou = bbox_inner_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw, ratio=0.7)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
         
         if self.nwd_loss:

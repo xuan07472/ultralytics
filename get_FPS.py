@@ -24,7 +24,7 @@ from torch.nn.parallel import DistributedDataParallel as DDP
 from tqdm import tqdm
 
 from ultralytics.utils.torch_utils import select_device
-from ultralytics import YOLO
+from ultralytics.nn.tasks import attempt_load_weights
 
 def get_weight_size(path):
     stats = os.stat(path)
@@ -47,7 +47,7 @@ if __name__ == '__main__':
     weights = opt.weights
     pretrained = weights.endswith('.pt')
     if pretrained:
-        model = YOLO(weights).model
+        model = attempt_load_weights(weights, device=device)
         print(f'Loaded {weights}')  # report
     else:
         assert weights.endswith('.pt'), "compress need weights."

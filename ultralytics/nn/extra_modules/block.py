@@ -24,7 +24,8 @@ __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Fa
            'SimFusion_3in', 'SimFusion_4in', 'IFM', 'InjectionMultiSum_Auto_pool', 'PyramidPoolAgg', 'AdvPoolFusion', 'TopBasicLayer',
            'C3_ContextGuided', 'C2f_ContextGuided', 'C3_MSBlock', 'C2f_MSBlock', 'ContextGuidedBlock_Down', 'C3_DLKA', 'C2f_DLKA', 'CSPStage', 'SPDConv',
            'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC', 'SPPF_LSKA', 'C3_DAttention', 'C2f_DAttention', 'C3_Parc', 'C2f_Parc', 'C3_DWR', 'C2f_DWR',
-           'C3_RFAConv', 'C2f_RFAConv', 'C3_RFCBAMConv', 'C2f_RFCBAMConv', 'C3_RFCAConv', 'C2f_RFCAConv', 'Ghost_HGBlock', 'Rep_HGBlock']
+           'C3_RFAConv', 'C2f_RFAConv', 'C3_RFCBAMConv', 'C2f_RFCBAMConv', 'C3_RFCAConv', 'C2f_RFCAConv', 'Ghost_HGBlock', 'Rep_HGBlock',
+           'C3_FocusedLinearAttention', 'C2f_FocusedLinearAttention']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -2510,6 +2511,8 @@ class SPPF_LSKA(nn.Module):
 
 ######################################## SPPF with LSKA end ########################################
 
+######################################## C3 C2f DAttention end ########################################
+
 class Bottleneck_DAttention(Bottleneck):
     """Standard bottleneck with DAttention."""
 
@@ -2532,7 +2535,7 @@ class C2f_DAttention(C2f):
         super().__init__(c1, c2, n, shortcut, g, e)
         self.m = nn.ModuleList(Bottleneck_DAttention(self.c, self.c, fmapsize, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
 
-######################################## C3 C2f DCNV2_Dynamic end ########################################
+######################################## C3 C2f DAttention end ########################################
 
 ######################################## C3 C2f ParC_op start ########################################
 
@@ -2773,3 +2776,29 @@ class Rep_HGBlock(nn.Module):
         return y + x if self.add else y
 
 ######################################## HGBlock with RepConv and GhostConv end ########################################
+
+######################################## C3 C2f FocusedLinearAttention end ########################################
+
+class Bottleneck_FocusedLinearAttention(Bottleneck):
+    """Standard bottleneck with FocusedLinearAttention."""
+
+    def __init__(self, c1, c2, fmapsize, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.attention = FocusedLinearAttention(c2, fmapsize)
+    
+    def forward(self, x):
+        return x + self.attention(self.cv2(self.cv1(x))) if self.add else self.attention(self.cv2(self.cv1(x)))
+
+class C3_FocusedLinearAttention(C3):
+    def __init__(self, c1, c2, n=1, fmapsize=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_FocusedLinearAttention(c_, c_, fmapsize, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_FocusedLinearAttention(C2f):
+    def __init__(self, c1, c2, n=1, fmapsize=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_FocusedLinearAttention(self.c, self.c, fmapsize, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f FocusedLinearAttention end ########################################

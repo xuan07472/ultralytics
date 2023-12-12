@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 
 from .checks import check_version
-from .metrics import bbox_iou
+from .metrics import bbox_iou, wasserstein_loss
 
 TORCH_1_10 = check_version(torch.__version__, '1.10.0')
 
@@ -158,6 +158,7 @@ class TaskAlignedAssigner(nn.Module):
         pd_boxes = pd_bboxes.unsqueeze(1).expand(-1, self.n_max_boxes, -1, -1)[mask_gt]
         gt_boxes = gt_bboxes.unsqueeze(2).expand(-1, -1, na, -1)[mask_gt]
         overlaps[mask_gt] = bbox_iou(gt_boxes, pd_boxes, xywh=False, CIoU=True).squeeze(-1).clamp_(0)
+        # overlaps[mask_gt] = wasserstein_loss(gt_boxes, pd_boxes).squeeze(-1).clamp_(0)
 
         align_metric = bbox_scores.pow(self.alpha) * overlaps.pow(self.beta)
         return align_metric, overlaps

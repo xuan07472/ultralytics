@@ -1,5 +1,5 @@
 # dataset path
-path: /home/hjj/Desktop/github_code/yolov8/
+path: /root/code/project/yolov8/
 train: ./dataset/images/train
 val: ./dataset/images/val
 test: ./dataset/images/test
