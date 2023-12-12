@@ -299,7 +299,10 @@ class v8DetectionLoss:
                                               target_scores_sum, fg_mask, ((imgsz[0] ** 2 + imgsz[1] ** 2) / torch.square(stride_tensor)).repeat(1, batch_size).transpose(1, 0))
 
         if isinstance(self.bce, (EMASlideLoss, SlideLoss)):
-            auto_iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True).mean()
+            if fg_mask.sum():
+                auto_iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True).mean()
+            else:
+                auto_iou = -1
             loss[1] = self.bce(pred_scores, target_scores.to(dtype), auto_iou).sum() / target_scores_sum  # BCE
         
         loss[0] *= self.hyp.box  # box gain
