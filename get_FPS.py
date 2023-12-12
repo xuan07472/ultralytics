@@ -32,12 +32,12 @@ def get_weight_size(path):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default='yolov8n.pt', help='trained weights path')
-    parser.add_argument('--batch', type=int, default=1, help='total batch size for all GPUs')
+    parser.add_argument('--weights', type=str, default='runs/train/yolov8n-seaship2/weights/best.pt', help='trained weights path')
+    parser.add_argument('--batch', type=int, default=32, help='total batch size for all GPUs')
     parser.add_argument('--imgs', nargs='+', type=int, default=[640, 640], help='[height, width] image sizes')
-    parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
+    parser.add_argument('--device', default='0', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
     parser.add_argument('--warmup', default=200, type=int, help='warmup time')
-    parser.add_argument('--testtime', default=1000, type=int, help='test time')
+    parser.add_argument('--testtime', default=400, type=int, help='test time')
     parser.add_argument('--half', action='store_true', default=False, help='fp16 mode.')
     opt = parser.parse_args()
     
@@ -47,7 +47,7 @@ if __name__ == '__main__':
     weights = opt.weights
     pretrained = weights.endswith('.pt')
     if pretrained:
-        model = attempt_load_weights(weights, device=device, fuse=True)
+        model = attempt_load_weights(weights, device=device)
         print(f'Loaded {weights}')  # report
     else:
         assert weights.endswith('.pt'), "compress need weights."

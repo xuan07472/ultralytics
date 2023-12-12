@@ -59,6 +59,26 @@ def conv_bn(in_channels, out_channels, kernel_size, stride=1, padding=0, dilatio
     return se
 
 
+# class IdentityBasedConv1x1(nn.Conv2d):
+#     def __init__(self, channels, groups=1):
+#         super(IdentityBasedConv1x1, self).__init__(in_channels=channels, out_channels=channels, kernel_size=1, stride=1, padding=0, groups=groups, bias=False)
+
+#         assert channels % groups == 0
+#         input_dim = channels // groups
+#         id_value = np.zeros((channels, input_dim, 1, 1))
+#         for i in range(channels):
+#             id_value[i, i % input_dim, 0, 0] = 1
+#         self.id_tensor = torch.from_numpy(id_value).type_as(self.weight)
+#         nn.init.zeros_(self.weight)
+
+#     def forward(self, input):
+#         kernel = self.weight + self.id_tensor.to(self.weight.device).type_as(self.weight)
+#         result = F.conv2d(input, kernel, None, stride=1, padding=0, dilation=self.dilation, groups=self.groups)
+#         return result
+
+#     def get_actual_kernel(self):
+#         return self.weight + self.id_tensor.to(self.weight.device)
+
 class IdentityBasedConv1x1(nn.Module):
     def __init__(self, channels, groups=1):
         super().__init__()
