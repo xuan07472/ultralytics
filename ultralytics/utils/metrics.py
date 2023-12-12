@@ -275,7 +275,7 @@ def bbox_mpdiou(box1, box2, xywh=True, mpdiou_hw=1, eps=1e-7):
     iou = inter / union
     d1 = (b2_x1 - b1_x1) ** 2 + (b2_y1 - b1_y1) ** 2
     d2 = (b2_x2 - b1_x2) ** 2 + (b2_y2 - b1_y2) ** 2
-    return iou - d1 / mpdiou_hw - d2 / mpdiou_hw  # MPDIoU
+    return iou - d1 / mpdiou_hw.unsqueeze(1) - d2 / mpdiou_hw.unsqueeze(1)  # MPDIoU
 
 def bbox_inner_mpdiou(box1, box2, xywh=True, mpdiou_hw=1, ratio=0.7, eps=1e-7):
     """
@@ -308,7 +308,7 @@ def bbox_inner_mpdiou(box1, box2, xywh=True, mpdiou_hw=1, ratio=0.7, eps=1e-7):
     iou = inter / union
     d1 = (b2_x1 - b1_x1) ** 2 + (b2_y1 - b1_y1) ** 2
     d2 = (b2_x2 - b1_x2) ** 2 + (b2_y2 - b1_y2) ** 2
-    return innner_iou - d1 / mpdiou_hw - d2 / mpdiou_hw  # MPDIoU
+    return innner_iou - d1 / mpdiou_hw.unsqueeze(1) - d2 / mpdiou_hw.unsqueeze(1)  # MPDIoU
 
 def wasserstein_loss(pred, target, eps=1e-7, constant=12.8):
     r"""`Implementation of paper `Enhancing Geometric Factors into

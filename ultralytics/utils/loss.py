@@ -135,8 +135,8 @@ class BboxLoss(nn.Module):
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
         iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
         # iou = bbox_inner_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True, ratio=0.7)
-        # iou = bbox_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw)
-        # iou = bbox_inner_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw, ratio=0.7)
+        # iou = bbox_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw[fg_mask])
+        # iou = bbox_inner_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw[fg_mask], ratio=0.7)
         loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
         
         if self.nwd_loss:
@@ -296,7 +296,7 @@ class v8DetectionLoss:
         if fg_mask.sum():
             target_bboxes /= stride_tensor
             loss[0], loss[2] = self.bbox_loss(pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores,
-                                              target_scores_sum, fg_mask, feats[0].shape[0] ** 2 + feats[0].shape[1] ** 2)
+                                              target_scores_sum, fg_mask, ((imgsz[0] ** 2 + imgsz[1] ** 2) / torch.square(stride_tensor)).repeat(1, batch_size).transpose(1, 0))
 
         if isinstance(self.bce, (EMASlideLoss, SlideLoss)):
             auto_iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True).mean()
@@ -355,9 +355,9 @@ class v8DetectionLoss:
             target_bboxes /= stride_tensor
             target_bboxes_aux /= stride_tensor
             loss[0], loss[2] = self.bbox_loss(pred_distri, pred_bboxes, anchor_points, target_bboxes, target_scores,
-                                            target_scores_sum, fg_mask, feats[0].shape[0] ** 2 + feats[0].shape[1] ** 2)
+                                            target_scores_sum, fg_mask, ((imgsz[0] ** 2 + imgsz[1] ** 2) / torch.square(stride_tensor)).repeat(1, batch_size).transpose(1, 0))
             aux_loss_0, aux_loss_2 = self.bbox_loss(pred_distri_aux, pred_bboxes_aux, anchor_points, target_bboxes_aux, target_scores_aux,
-                                            target_scores_sum_aux, fg_mask_aux, feats_aux[0].shape[0] ** 2 + feats_aux[0].shape[1] ** 2)
+                                            target_scores_sum_aux, fg_mask_aux, ((imgsz[0] ** 2 + imgsz[1] ** 2) / torch.square(stride_tensor)).repeat(1, batch_size).transpose(1, 0))
             
             loss[0] += aux_loss_0 * self.aux_loss_ratio
             loss[2] += aux_loss_2 * self.aux_loss_ratio
@@ -430,7 +430,7 @@ class v8SegmentationLoss(v8DetectionLoss):
         if fg_mask.sum():
             # Bbox loss
             loss[0], loss[3] = self.bbox_loss(pred_distri, pred_bboxes, anchor_points, target_bboxes / stride_tensor,
-                                              target_scores, target_scores_sum, fg_mask)
+                                              target_scores, target_scores_sum, fg_mask, ((imgsz[0] ** 2 + imgsz[1] ** 2) / torch.square(stride_tensor)).repeat(1, batch_size).transpose(1, 0))
             # Masks loss
             masks = batch['masks'].to(self.device).float()
             if tuple(masks.shape[-2:]) != (mask_h, mask_w):  # downsample
