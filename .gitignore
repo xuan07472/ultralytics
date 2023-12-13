@@ -166,3 +166,10 @@ pnnx*
 
 # dataset cache 
 *.cache
+
+# Custom configuration
+*.cache
+try.ipynb
+*_c.yaml
+*_c.ipynb
+yolov8-v*.patch
