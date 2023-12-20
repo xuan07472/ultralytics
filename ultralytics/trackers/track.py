@@ -6,6 +6,7 @@ import torch
 
 from ultralytics.utils import IterableSimpleNamespace, yaml_load
 from ultralytics.utils.checks import check_yaml
+from ultralytics.engine.results import Results
 
 from .bot_sort import BOTSORT
 from .byte_tracker import BYTETracker
@@ -42,7 +43,7 @@ def on_predict_postprocess_end(predictor):
     bs = predictor.dataset.bs
     im0s = predictor.batch[1]
     for i in range(bs):
-        det = predictor.results[i].boxes.cpu().numpy()
+        det = predictor.results[i].boxes.data.cpu().numpy()
         if len(det) == 0:
             continue
         tracks = predictor.trackers[i].update(det, im0s[i])
@@ -60,6 +61,7 @@ def register_tracker(model, persist):
     Args:
         model (object): The model object to register tracking callbacks for.
         persist (bool): Whether to persist the trackers if they already exist.
+
     """
     model.add_callback('on_predict_start', partial(on_predict_start, persist=persist))
     model.add_callback('on_predict_postprocess_end', on_predict_postprocess_end)
