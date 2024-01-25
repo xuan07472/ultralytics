@@ -1,3 +1,4 @@
+import torch
 import torch_pruning as tp
 from typing import Sequence
 
@@ -62,3 +63,21 @@ class DiverseBranchBlockPruner(tp.pruner.BasePruningFunc):
     
     def get_channel_groups(self, layer: DiverseBranchBlock):
         return layer.groups
+
+from ..backbone.convnextv2 import LayerNorm
+class LayerNormPruner(tp.pruner.BasePruningFunc):
+    def prune_out_channels(self, layer:LayerNorm, idxs: Sequence[int]):
+        num_features = layer.normalized_shape[0]
+        keep_idxs = torch.tensor(list(set(range(num_features)) - set(idxs)))
+        keep_idxs.sort()
+        layer.weight = self._prune_parameter_and_grad(layer.weight, keep_idxs, -1)
+        layer.bias = self._prune_parameter_and_grad(layer.bias, keep_idxs, -1)
+        layer.normalized_shape = (len(keep_idxs),)
+    
+    prune_in_channels = prune_out_channels
+    
+    def get_out_channels(self, layer):
+        return layer.normalized_shape[0]
+
+    def get_in_channels(self, layer):
+        return layer.normalized_shape[0]

@@ -169,7 +169,7 @@ pnnx*
 
 # Custom configuration
 *.cache
-try.ipynb
+try*.ipynb
 *_c.yaml
 *_c.ipynb
 yolov8-v*.patch

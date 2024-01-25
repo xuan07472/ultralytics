@@ -2,6 +2,8 @@
 
 import sys, os, torch, math, time, warnings
 import torch_pruning as tp
+import matplotlib
+matplotlib.use('AGG')
 import matplotlib.pylab as plt
 import torch.nn as nn
 from torch import optim
@@ -33,10 +35,13 @@ from ultralytics.utils.torch_utils import ModelEMA, EarlyStopping, one_cycle, in
 # from ultralytics.nn.extra_modules.kernel_warehouse import get_temperature
 
 from ultralytics.nn.modules import Detect
+from ultralytics.nn.extra_modules.MyPruner import DiverseBranchBlockPruner, LayerNormPruner
+
+# 没有购买yolov8项目需要注释以下
 from ultralytics.nn.extra_modules import Detect_Efficient
-from ultralytics.nn.extra_modules.block import Faster_Block, Fusion
+from ultralytics.nn.extra_modules.block import Faster_Block, Fusion, IFM, InjectionMultiSum_Auto_pool, TopBasicLayer, SimFusion_3in, SimFusion_4in, AdvPoolFusion, PyramidPoolAgg, RepVGGBlock
 from ultralytics.nn.extra_modules.rep_block import DiverseBranchBlock
-from ultralytics.nn.extra_modules.MyPruner import DiverseBranchBlockPruner
+from ultralytics.nn.backbone.convnextv2 import LayerNorm
 
 class HiddenPrints:
     def __enter__(self):
@@ -143,6 +148,36 @@ def get_pruner(opt, model, example_inputs):
     # ignored_layers.append(model.model[18].cv2)
     # ignored_layers.append(model.model[21].cv2)
     
+    # for yolov8-convnextv2-goldyolo-asf.yaml
+    # customized_pruners[LayerNorm] = LayerNormPruner()
+    # for k, m in model.named_modules():
+    #     if isinstance(m, Detect):
+    #         ignored_layers.append(m.cv2[0][2])
+    #         ignored_layers.append(m.cv2[1][2])
+    #         ignored_layers.append(m.cv2[2][2])
+    #         ignored_layers.append(m.cv3[0][2])
+    #         ignored_layers.append(m.cv3[1][2])
+    #         ignored_layers.append(m.cv3[2][2])
+    #         ignored_layers.append(m.dfl)
+    #     if isinstance(m, IFM):
+    #         ignored_layers.append(m)
+    #     if isinstance(m, TopBasicLayer):
+    #         ignored_layers.append(m)
+    #     # ------------------------------------------------
+    #     # if isinstance(m, InjectionMultiSum_Auto_pool):
+    #         # ignored_layers.append(m)
+    #     # if isinstance(m, SimFusion_3in):
+    #         # ignored_layers.append(m)
+    #     # if isinstance(m, SimFusion_4in):
+    #         # ignored_layers.append(m)
+    #     # if isinstance(m, AdvPoolFusion):
+    #         # ignored_layers.append(m)
+    #     # if isinstance(m, PyramidPoolAgg):
+    #         # ignored_layers.append(m)
+    #     # if isinstance(m, RepVGGBlock):
+    #         # ignored_layers.append(m)
+    #     # ------------------------------------------------
+        
     print(ignored_layers)
     # Here we fix iterative_steps=200 to prune the model progressively with small steps 
     # until the required speed up is achieved.
@@ -160,6 +195,7 @@ def get_pruner(opt, model, example_inputs):
         round_to=round_to,
         root_module_types=[nn.Conv2d, nn.Linear]
         # root_module_types=[nn.Conv2d, nn.Linear, DiverseBranchBlock]
+        # root_module_types=[nn.Conv2d, nn.Linear, nn.LayerNorm, LayerNorm]
     )
     return sparsity_learning, imp, pruner
 
@@ -595,11 +631,12 @@ class DetectionCompressor(BaseTrainer):
             
             del model_sl
             
-            plt.figure(figsize=(15, 5))
+            plt.figure(figsize=(15, 5), clear=True)
             plt.plot(bn_weight)
             plt.title(f'sparsity_ratio:{self.sparsity_ratio:.3f}\n')
             plt.tight_layout()
             plt.savefig(f'{self.save_dir}/visual/{epoch}_sl_{self.sparsity_ratio:.3f}.png')
+            plt.close('all')
             LOGGER.info(f'epoch:{epoch} reg:{reg:.5f} sparsity_ratio:{self.sparsity_ratio:.5f} bn_weight_1:{bn_weight_percent[0]:.10f} bn_weight_5:{bn_weight_percent[1]:.8f} bn_weight_10:{bn_weight_percent[2]:.8f}\nbn_weight_25:{bn_weight_percent[3]:.5f} bn_weight_50:{bn_weight_percent[4]:.5f} bn_weight_75:{bn_weight_percent[5]:.5f}')
             
             self.lr = {f'lr/pg{ir}': x['lr'] for ir, x in enumerate(self.optimizer.param_groups)}  # for loggers

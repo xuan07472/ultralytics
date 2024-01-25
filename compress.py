@@ -22,23 +22,23 @@ def finetune(param_dict, prune_model_path):
 if __name__ == '__main__':
     param_dict = {
         # origin
-        'model': 'runs/train/yolov8n-light/weights/best.pt',
-        'data':'/root/data_ssd/dataset_seaship/data.yaml',
+        'model': 'runs/train/yolov8-convnextv2-goldyolo-asf/weights/best.pt',
+        'data':'/root/data_ssd/dataset_crowdhuman/data_20per.yaml',
         'imgsz': 640,
-        'epochs': 200,
-        'batch': 32,
+        'epochs': 300,
+        'batch': 16,
         'workers': 8,
         'cache': True,
         'optimizer': 'SGD',
         'device': '0',
-        'close_mosaic': 20,
+        'close_mosaic': 0,
         'project':'runs/prune',
-        'name':'yolov8n-light-lamp-exp2',
+        'name':'yolov8-convnextv2-goldyolo-asf-lamp-exp1',
         
         # prune
         'prune_method':'lamp',
-        'global_pruning': False,
-        'speed_up': 2.5,
+        'global_pruning': True,
+        'speed_up': 2.0,
         'reg': 0.0005,
         'sl_epochs': 500,
         'sl_hyp': 'ultralytics/cfg/hyp.scratch.sl.yaml',

@@ -575,16 +575,282 @@ CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8n-light-lamp-exp2-test.l
 nohup python get_FPS.py --weights runs/prune/yolov8n-light-lamp-exp2-prune/weights/prune.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8n-light-lamp-exp2-fps.log 2>&1 & tail -f logs/yolov8n-light-lamp-exp2-fps.log
 ```
 
+### Model:yolov8-ASF-P2.yaml Dataset:Visdrone
+```
+nohup python get_FPS.py --weights runs/prune/yolov8n-asf-p2-lamp-exp1-prune/weights/model_c2f_v2.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8n-asf-p2-fps.log 2>&1 & tail -f logs/yolov8n-asf-p2-fps.log
+------------------ lamp exp1 ------------------
+param_dict = {
+    # origin
+    'model': 'runs/train/yolov8n-asf-p2/weights/best.pt',
+    'data':'/root/data_ssd/dataset_visdrone/data.yaml',
+    'imgsz': 640,
+    'epochs': 300,
+    'batch': 8,
+    'workers': 4,
+    'cache': True,
+    'optimizer': 'SGD',
+    'device': '0',
+    'close_mosaic': 20,
+    'project':'runs/prune',
+    'name':'yolov8n-asf-p2-lamp-exp1',
+    
+    # prune
+    'prune_method':'lamp',
+    'global_pruning': True,
+    'speed_up': 2.0,
+    'reg': 0.0005,
+    'sl_epochs': 500,
+    'sl_hyp': 'ultralytics/cfg/hyp.scratch.sl.yaml',
+    'sl_model': None
+}
+
+CUDA_VISIBLE_DEVICES=0 nohup python compress.py > logs/yolov8n-asf-p2-lamp-exp1.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp1.log
+CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8n-asf-p2-lamp-exp1-test.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp1-test.log
+nohup python get_FPS.py --weights runs/prune/yolov8n-asf-p2-lamp-exp1-prune/weights/prune.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8n-asf-p2-lamp-exp1-fps.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp1-fps.log
+
+------------------ lamp exp2 ------------------
+param_dict = {
+    # origin
+    'model': 'runs/train/yolov8n-asf-p2/weights/best.pt',
+    'data':'/root/data_ssd/dataset_visdrone/data.yaml',
+    'imgsz': 640,
+    'epochs': 300,
+    'batch': 8,
+    'workers': 4,
+    'cache': True,
+    'optimizer': 'SGD',
+    'device': '0',
+    'close_mosaic': 20,
+    'project':'runs/prune',
+    'name':'yolov8n-asf-p2-lamp-exp2',
+    
+    # prune
+    'prune_method':'lamp',
+    'global_pruning': True,
+    'speed_up': 1.5,
+    'reg': 0.0005,
+    'sl_epochs': 500,
+    'sl_hyp': 'ultralytics/cfg/hyp.scratch.sl.yaml',
+    'sl_model': None
+}
+
+CUDA_VISIBLE_DEVICES=1 nohup python compress.py > logs/yolov8n-asf-p2-lamp-exp2.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp2.log
+CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8n-asf-p2-lamp-exp2-test.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp2-test.log
+nohup python get_FPS.py --weights runs/prune/yolov8n-asf-p2-lamp-exp2-prune/weights/prune.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8n-asf-p2-lamp-exp2-fps.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp2-fps.log
+
+------------------ lamp exp3 ------------------
+param_dict = {
+    # origin
+    'model': 'runs/train/yolov8n-asf-p2/weights/best.pt',
+    'data':'/root/data_ssd/dataset_visdrone/data.yaml',
+    'imgsz': 640,
+    'epochs': 300,
+    'batch': 8,
+    'workers': 4,
+    'cache': True,
+    'optimizer': 'SGD',
+    'device': '0',
+    'close_mosaic': 20,
+    'project':'runs/prune',
+    'name':'yolov8n-asf-p2-lamp-exp3',
+    
+    # prune
+    'prune_method':'lamp',
+    'global_pruning': True,
+    'speed_up': 1.7,
+    'reg': 0.0005,
+    'sl_epochs': 500,
+    'sl_hyp': 'ultralytics/cfg/hyp.scratch.sl.yaml',
+    'sl_model': None
+}
+
+CUDA_VISIBLE_DEVICES=0 nohup python compress.py > logs/yolov8n-asf-p2-lamp-exp3.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp3.log
+CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8n-asf-p2-lamp-exp3-test.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp3-test.log
+nohup python get_FPS.py --weights runs/prune/yolov8n-asf-p2-lamp-exp3-prune/weights/prune.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8n-asf-p2-lamp-exp3-fps.log 2>&1 & tail -f logs/yolov8n-asf-p2-lamp-exp3-fps.log
+```
+
+### Model:yolov8-ASF-P2.yaml Dataset:Visdrone only using 30% Training Data
+```
+------------------ train base model ------------------
+model = YOLO('yolov8-GhostHGNetV2-SlimNeck-ASF.yaml')
+# model.load('yolov8n.pt') # loading pretrain weights
+model.train(data='/root/data_ssd/dataset_visdrone/data_exp.yaml',
+            cache=True,
+            imgsz=640,
+            epochs=250,
+            batch=8,
+            close_mosaic=20,
+            workers=8,
+            device='0',
+            optimizer='SGD', # using SGD
+            # resume='', # last.pt path
+            # amp=False # close amp
+            # fraction=0.2,
+            project='runs/train',
+            name='yolov8n',
+            )
+
+CUDA_VISIBLE_DEVICES=0 nohup python train.py > logs/yolov8n.log 2>&1 & tail -f logs/yolov8n.log
+CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8n-test.log 2>&1 & tail -f logs/yolov8n-test.log
+nohup python get_FPS.py --weights runs/prune/yolov8n-lamp-exp1-prune/weights/model_c2f_v2.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8n-fps.log 2>&1 & tail -f logs/yolov8n-fps.log
+
+model = YOLO('yolov8s-GhostHGNetV2-SlimNeck-ASF.yaml')
+# model.load('yolov8n.pt') # loading pretrain weights
+model.train(data='/root/data_ssd/dataset_visdrone/data_exp.yaml',
+            cache=True,
+            imgsz=640,
+            epochs=250,
+            batch=8,
+            close_mosaic=20,
+            workers=8,
+            device='0',
+            optimizer='SGD', # using SGD
+            # resume='', # last.pt path
+            # amp=False # close amp
+            # fraction=0.2,
+            project='runs/train',
+            name='yolov8s',
+            )
+
+CUDA_VISIBLE_DEVICES=0 nohup python train.py > logs/yolov8s.log 2>&1 & tail -f logs/yolov8s.log
+CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8s-test.log 2>&1 & tail -f logs/yolov8s-test.log
+nohup python get_FPS.py --weights runs/train/yolov8s/weights/model_c2f_v2.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8s-fps.log 2>&1 & tail -f logs/yolov8s-fps.log
+------------------ lamp exp1 ------------------
+param_dict = {
+    # origin
+    'model': 'runs/train/yolov8n/weights/best.pt',
+    'data':'/root/data_ssd/dataset_visdrone/data_exp.yaml',
+    'imgsz': 640,
+    'epochs': 250,
+    'batch': 8,
+    'workers': 8,
+    'cache': True,
+    'optimizer': 'SGD',
+    'device': '0',
+    'close_mosaic': 20,
+    'project':'runs/prune',
+    'name':'yolov8n-lamp-exp1',
+    
+    # prune
+    'prune_method':'lamp',
+    'global_pruning': True,
+    'speed_up': 2.0,
+    'reg': 0.0005,
+    'sl_epochs': 500,
+    'sl_hyp': 'ultralytics/cfg/hyp.scratch.sl.yaml',
+    'sl_model': None
+}
+
+CUDA_VISIBLE_DEVICES=1 nohup python compress.py > logs/yolov8n-lamp-exp1.log 2>&1 & tail -f logs/yolov8n-lamp-exp1.log
+CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8n-lamp-exp1-test.log 2>&1 & tail -f logs/yolov8n-lamp-exp1-test.log
+nohup python get_FPS.py --weights runs/prune/yolov8n-lamp-exp1-finetune/weights/best.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8n-lamp-exp1-fps.log 2>&1 & tail -f logs/yolov8n-lamp-exp1-fps.log
+```
+
+### Model:yolov8-convnextv2-goldyolo-asf.yaml Dataset:CrowdHuman only using 20% Training Data
+```
+------------------ train base model ------------------
+model = YOLO('yolov8-convnextv2-goldyolo-asf.yaml')
+# model.load('yolov8n.pt') # loading pretrain weights
+model.train(data='/root/data_ssd/dataset_crowdhuman/data_20per.yaml',
+            cache=True,
+            imgsz=640,
+            epochs=300,
+            batch=16,
+            close_mosaic=0,
+            workers=8,
+            device='0',
+            optimizer='SGD', # using SGD
+            # resume='', # last.pt path
+            # amp=False # close amp
+            # fraction=0.2,
+            project='runs/train',
+            name='yolov8-convnextv2-goldyolo-asf',
+            )
+CUDA_VISIBLE_DEVICES=0 nohup python train.py > logs/yolov8n.log 2>&1 & tail -f logs/yolov8n.log
+CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8n-test.log 2>&1 & tail -f logs/yolov8n-test.log
+CUDA_VISIBLE_DEVICES=0 nohup python get_FPS.py --weights runs/prune/yolov8-convnextv2-goldyolo-asf-lamp-exp1-prune/weights/model_c2f_v2.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8n-fps.log 2>&1 & tail -f logs/yolov8n-fps.log
+
+------------------ lamp exp1 ------------------
+param_dict = {
+    # origin
+    'model': 'runs/train/yolov8-convnextv2-goldyolo-asf/weights/best.pt',
+    'data':'/root/data_ssd/dataset_crowdhuman/data_20per.yaml',
+    'imgsz': 640,
+    'epochs': 300,
+    'batch': 16,
+    'workers': 8,
+    'cache': True,
+    'optimizer': 'SGD',
+    'device': '0',
+    'close_mosaic': 0,
+    'project':'runs/prune',
+    'name':'yolov8-convnextv2-goldyolo-asf-lamp-exp1',
+    
+    # prune
+    'prune_method':'lamp',
+    'global_pruning': True,
+    'speed_up': 2.0,
+    'reg': 0.0005,
+    'sl_epochs': 500,
+    'sl_hyp': 'ultralytics/cfg/hyp.scratch.sl.yaml',
+    'sl_model': None
+}
+
+CUDA_VISIBLE_DEVICES=0 nohup python compress.py > logs/yolov8n-lamp-exp1.log 2>&1 & tail -f logs/yolov8n-lamp-exp1.log
+CUDA_VISIBLE_DEVICES=0 nohup python val.py > logs/yolov8n-lamp-exp1-test.log 2>&1 & tail -f logs/yolov8n-lamp-exp1-test.log
+nohup python get_FPS.py --weights runs/prune/yolov8-convnextv2-goldyolo-asf-lamp-exp1-finetune/weights/best.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8-convnextv2-goldyolo-asf-lamp-exp1-fps.log 2>&1 & tail -f logs/yolov8-convnextv2-goldyolo-asf-lamp-exp1-fps.log
+
+------------------ lamp exp2 ------------------
+param_dict = {
+    # origin
+    'model': 'runs/train/yolov8-convnextv2-goldyolo-asf/weights/best.pt',
+    'data':'/root/data_ssd/dataset_crowdhuman/data_20per.yaml',
+    'imgsz': 640,
+    'epochs': 300,
+    'batch': 16,
+    'workers': 8,
+    'cache': True,
+    'optimizer': 'SGD',
+    'device': '0',
+    'close_mosaic': 0,
+    'project':'runs/prune',
+    'name':'yolov8-convnextv2-goldyolo-asf-lamp-exp2',
+    
+    # prune
+    'prune_method':'lamp',
+    'global_pruning': True,
+    'speed_up': 2.5,
+    'reg': 0.0005,
+    'sl_epochs': 500,
+    'sl_hyp': 'ultralytics/cfg/hyp.scratch.sl.yaml',
+    'sl_model': None
+}
+
+CUDA_VISIBLE_DEVICES=1 nohup python compress.py > logs/yolov8n-lamp-exp2.log 2>&1 & tail -f logs/yolov8n-lamp-exp2.log
+CUDA_VISIBLE_DEVICES=1 nohup python val.py > logs/yolov8n-lamp-exp2-test.log 2>&1 & tail -f logs/yolov8n-lamp-exp2-test.log
+nohup python get_FPS.py --weights runs/prune/yolov8-convnextv2-goldyolo-asf-lamp-exp2-finetune/weights/best.pt --batch 32 --device 0 --warmup 200 --testtime 400 > logs/yolov8-convnextv2-goldyolo-asf-lamp-exp2-fps.log 2>&1 & tail -f logs/yolov8-convnextv2-goldyolo-asf-lamp-exp2-fps.log
+python plot_channel_image.py --base-weights runs/prune/yolov8-convnextv2-goldyolo-asf-lamp-exp2-prune/weights/model_c2f_v2.pt --prune-weights runs/prune/yolov8-convnextv2-goldyolo-asf-lamp-exp2-finetune/weights/best.pt
+```
+
 # 使用教程
     剪枝操作问题，报错问题统一群里问，我群里回复谢谢~
+
+# 环境
+
+    pip install torch-pruning==1.3.6 -i https://pypi.tuna.tsinghua.edu.cn/simple
 
 ## 视频
 
 整体的流程说明和讲解(第一个必须要看的视频):
-链接：https://pan.baidu.com/s/147wIPfk4-4_WXKOc6LZtLw?pwd=pman 
-提取码：pman # BiliBili 魔鬼面具
+链接：https://pan.baidu.com/s/1ItOrltsDvB3sMUTstt6nsQ?pwd=3ncg 
+提取码：3ncg # BiliBili 魔鬼面具
 
-yolov8-Faster-GFPN-P2-EfficientHead教程:
+1. 20231221 增加一个使用教程的视频
+2. 20240114 增加一个c2f_v2转回去c2f的教程视频(需要对剪枝后的模型做蒸馏学习的必看!)
+
+--------------------------------------------------------------
+
+yolov8-Faster-GFPN-P2-EfficientHead教程:(更正:里面的不是GFPN,是YOLOV6的EfficientRepBiPAN)
 链接：https://pan.baidu.com/s/103ljiewi9nG3bDJupH8jdw?pwd=b939 
 提取码：b939 # BiliBili 魔鬼面具
 
@@ -596,7 +862,17 @@ EfficientHead中的PConv跳层教程:
 链接：https://pan.baidu.com/s/1MLVEqLicH6keIp6GhYDECw?pwd=ejqn 
 提取码：ejqn # BiliBili 魔鬼面具
 
-yolov5v7的示例讲解:
+yolov8-GhostHGNetV2-SlimNeck-ASF教程:
+链接：https://pan.baidu.com/s/1wSFWQLWB9DkA8SKCe377sg?pwd=da2d 
+提取码：da2d # BiliBili 魔鬼面具
+
+yolov8-convnextv2-goldyolo-asf.yaml教程:
+链接：https://pan.baidu.com/s/1isZ2zfq8Hpq45UpxNCQtgA?pwd=dbew 
+提取码：dbew # BiliBili 魔鬼面具
+
+--------------------------------------------------------------
+
+yolov5v7的示例讲解(主要是增加剪枝跳层的理解):
 1. yolov5n+C3-Faster+RepConv
 链接：https://pan.baidu.com/s/11UVcQINQUlzUQzWjTpp6fw?pwd=sa15 
 提取码：sa15 # BiliBili 魔鬼面具
@@ -629,3 +905,12 @@ yolov5v7的示例讲解:
 提取码：79nc # BiliBili 魔鬼面具
 链接：https://pan.baidu.com/s/16FoDC2yiIOlwlTN5o87PpQ?pwd=5c05 
 提取码：5c05 # BiliBili 魔鬼面具 Seaship数据集
+4. yolov8-ASF-P2.yaml(这个不需要额外的跳层,所以没有讲解视频)
+链接：https://pan.baidu.com/s/1zspaMKnRDnxCOXnmaa-siw?pwd=nywb 
+提取码：nywb # BiliBili 魔鬼面具
+5. yolov8-GhostHGNetV2-SlimNeck-ASF.yaml
+链接：https://pan.baidu.com/s/1o0HYkiAFlkYwYZWxOcjYxQ?pwd=9ys9 
+提取码：9ys9 # BiliBili 魔鬼面具
+6. yolov8-convnextv2-goldyolo-asf.yaml
+链接：https://pan.baidu.com/s/1wW3LpcY9xwwJSKDLfl2L1Q?pwd=d7nr 
+提取码：d7nr # BiliBili 魔鬼面具

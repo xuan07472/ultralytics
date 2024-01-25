@@ -1,53 +1,80 @@
 import torch
 from ultralytics.nn.modules.conv import Conv
 from ultralytics.nn.modules.block import C2f
-from ultralytics.nn.extra_modules.block import C2f_Faster, C2f_EMBC
 from ultralytics.nn.extra_modules.prune_module import *
 
-# def transfer_weights_c2f_v2_to_c2f(c2f_v2, c2f):
-#     c2f.cv2 = c2f_v2.cv2
-#     c2f.m = c2f_v2.m
+# 没有购买yolov8项目需要注释以下
+from ultralytics.nn.extra_modules.block import C2f_Faster, C2f_EMBC
 
-#     state_dict = c2f.state_dict()
-#     state_dict_v2 = c2f_v2.state_dict()
+def transfer_weights_c2f_v2_to_c2f(c2f_v2, c2f):
+    c2f.cv2 = c2f_v2.cv2
+    c2f.m = c2f_v2.m
 
-#     # Transfer cv1 weights from C2f to cv0 and cv1 in C2f_v2
-#     old_weight = state_dict['cv1.conv.weight']
-#     new_cv1 = Conv(c1=state_dict_v2['cv0.conv.weight'].size()[1],
-#                    c2=(state_dict_v2['cv0.conv.weight'].size()[0] + state_dict_v2['cv1.conv.weight'].size()[0]),
-#                    k=c2f_v2.cv1.conv.kernel_size,
-#                    s=c2f_v2.cv1.conv.stride)
-#     c2f.cv1 = new_cv1
-#     c2f.c1, c2f.c2 = state_dict_v2['cv0.conv.weight'].size()[0], state_dict_v2['cv1.conv.weight'].size()[0]
-#     state_dict['cv1.conv.weight'] = torch.cat([state_dict_v2['cv0.conv.weight'], state_dict_v2['cv1.conv.weight']], dim=0)
+    state_dict = c2f.state_dict()
+    state_dict_v2 = c2f_v2.state_dict()
 
-#     # Transfer cv1 batchnorm weights and buffers from C2f to cv0 and cv1 in C2f_v2
-#     for bn_key in ['weight', 'bias', 'running_mean', 'running_var']:
-#         state_dict[f'cv1.bn.{bn_key}'] = torch.cat([state_dict_v2[f'cv0.bn.{bn_key}'], state_dict_v2[f'cv1.bn.{bn_key}']], dim=0)
+    # Transfer cv1 weights from C2f to cv0 and cv1 in C2f_v2
+    old_weight = state_dict['cv1.conv.weight']
+    new_cv1 = Conv(c1=state_dict_v2['cv0.conv.weight'].size()[1],
+                   c2=(state_dict_v2['cv0.conv.weight'].size()[0] + state_dict_v2['cv1.conv.weight'].size()[0]),
+                   k=c2f_v2.cv1.conv.kernel_size,
+                   s=c2f_v2.cv1.conv.stride)
+    c2f.cv1 = new_cv1
+    c2f.c1, c2f.c2 = state_dict_v2['cv0.conv.weight'].size()[0], state_dict_v2['cv1.conv.weight'].size()[0]
+    state_dict['cv1.conv.weight'] = torch.cat([state_dict_v2['cv0.conv.weight'], state_dict_v2['cv1.conv.weight']], dim=0)
 
-#     # Transfer remaining weights and buffers
-#     for key in state_dict:
-#         if not key.startswith('cv1.'):
-#             state_dict[key] = state_dict_v2[key]
+    # Transfer cv1 batchnorm weights and buffers from C2f to cv0 and cv1 in C2f_v2
+    for bn_key in ['weight', 'bias', 'running_mean', 'running_var']:
+        state_dict[f'cv1.bn.{bn_key}'] = torch.cat([state_dict_v2[f'cv0.bn.{bn_key}'], state_dict_v2[f'cv1.bn.{bn_key}']], dim=0)
 
-#     c2f.f = c2f_v2.f
-#     c2f.i = c2f_v2.i
+    # Transfer remaining weights and buffers
+    for key in state_dict:
+        if not key.startswith('cv1.'):
+            state_dict[key] = state_dict_v2[key]
 
-#     c2f.load_state_dict(state_dict)
+    # Transfer all non-method attributes
+    for attr_name in dir(c2f_v2):
+        attr_value = getattr(c2f_v2, attr_name)
+        if not callable(attr_value) and '_' not in attr_name:
+            setattr(c2f, attr_name, attr_value)
 
-# def replace_c2f_v2_with_c2f(module):
-#     for name, child_module in module.named_children():
-#         if isinstance(child_module, C2f_v2):
-#             # Replace C2f with C2f_v2 while preserving its parameters
-#             shortcut = infer_shortcut(child_module.m[0])
-#             c2f = C2f_infer(child_module.cv1.conv.in_channels, child_module.cv2.conv.out_channels,
-#                             n=len(child_module.m), shortcut=shortcut,
-#                             g=child_module.m[0].cv2.conv.groups,
-#                             e=child_module.c / child_module.cv2.conv.out_channels)
-#             transfer_weights_c2f_v2_to_c2f(child_module, c2f)
-#             setattr(module, name, c2f)
-#         else:
-#             replace_c2f_v2_with_c2f(child_module)
+    c2f.load_state_dict(state_dict)
+
+def replace_c2f_v2_with_c2f(module):
+    for name, child_module in module.named_children():
+        if isinstance(child_module, C2f_v2):
+            # Replace C2f with C2f_v2 while preserving its parameters
+            shortcut = infer_shortcut(child_module.m[0])
+            c2f = C2f_infer(child_module.cv1.conv.in_channels, child_module.cv2.conv.out_channels,
+                            n=len(child_module.m), shortcut=shortcut,
+                            g=child_module.m[0].cv2.conv.groups,
+                            e=child_module.c / child_module.cv2.conv.out_channels)
+            transfer_weights_c2f_v2_to_c2f(child_module, c2f)
+            setattr(module, name, c2f)
+        else:
+            replace_c2f_v2_with_c2f(child_module)
+    
+    # for name, child_module in module.named_children():
+    #     if isinstance(child_module, C2f_EMBC_v2):
+    #         # Replace C2f with C2f_v2 while preserving its parameters
+    #         shortcut = infer_shortcut(child_module.m[0])
+    #         c2f = C2f_EMBC_infer(child_module.cv1.conv.in_channels, child_module.cv2.conv.out_channels,
+    #                         n=len(child_module.m), shortcut=shortcut,
+    #                         g=1,
+    #                         e=child_module.c / child_module.cv2.conv.out_channels)
+    #         transfer_weights_c2f_v2_to_c2f(child_module, c2f)
+    #         setattr(module, name, c2f)
+    #     elif isinstance(child_module, C2f_v2):
+    #         # Replace C2f with C2f_v2 while preserving its parameters
+    #         shortcut = infer_shortcut(child_module.m[0])
+    #         c2f = C2f_infer(child_module.cv1.conv.in_channels, child_module.cv2.conv.out_channels,
+    #                         n=len(child_module.m), shortcut=shortcut,
+    #                         g=child_module.m[0].cv2.conv.groups,
+    #                         e=child_module.c / child_module.cv2.conv.out_channels)
+    #         transfer_weights_c2f_v2_to_c2f(child_module, c2f)
+    #         setattr(module, name, c2f)
+    #     else:
+    #         replace_c2f_v2_with_c2f(child_module)
 
 def infer_shortcut(bottleneck):
     try:
