@@ -4,7 +4,7 @@ from ultralytics.nn.modules.block import C2f
 from ultralytics.nn.extra_modules.prune_module import *
 
 # 没有购买yolov8项目需要注释以下
-from ultralytics.nn.extra_modules.block import C2f_Faster, C2f_EMBC
+from ultralytics.nn.extra_modules.block import C2f_Faster, C2f_EMBC, C2f_SCConv
 
 def transfer_weights_c2f_v2_to_c2f(c2f_v2, c2f):
     c2f.cv2 = c2f_v2.cv2
@@ -117,10 +117,18 @@ def transfer_weights_c2f_to_c2f_v2(c2f, c2f_v2):
     c2f_v2.load_state_dict(state_dict_v2)
 
 def replace_c2f_with_c2f_v2(module):
-    # for yolov8n.yaml
+    # for yolov8-SCConv-b2-Tripet-v1.yaml # 将C2f_SCConv转化为C2f_SCConv_v2
     for name, child_module in module.named_children():
-        if isinstance(child_module, C2f):
+        if isinstance(child_module, C2f_SCConv):
             # Replace C2f with C2f_v2 while preserving its parameters
+            shortcut = infer_shortcut(child_module.m[0])
+            c2f_v2 = C2f_SCConv_v2(child_module.cv1.conv.in_channels, child_module.cv2.conv.out_channels,
+                            n=len(child_module.m), shortcut=shortcut,
+                            g=1,
+                            e=child_module.c / child_module.cv2.conv.out_channels)
+            transfer_weights_c2f_to_c2f_v2(child_module, c2f_v2)
+            setattr(module, name, c2f_v2)
+        elif isinstance(child_module, C2f):
             shortcut = infer_shortcut(child_module.m[0])
             c2f_v2 = C2f_v2(child_module.cv1.conv.in_channels, child_module.cv2.conv.out_channels,
                             n=len(child_module.m), shortcut=shortcut,
@@ -130,6 +138,20 @@ def replace_c2f_with_c2f_v2(module):
             setattr(module, name, c2f_v2)
         else:
             replace_c2f_with_c2f_v2(child_module)
+    
+    # for yolov8n.yaml
+    # for name, child_module in module.named_children():
+    #     if isinstance(child_module, C2f):
+    #         # Replace C2f with C2f_v2 while preserving its parameters
+    #         shortcut = infer_shortcut(child_module.m[0])
+    #         c2f_v2 = C2f_v2(child_module.cv1.conv.in_channels, child_module.cv2.conv.out_channels,
+    #                         n=len(child_module.m), shortcut=shortcut,
+    #                         g=child_module.m[0].cv2.conv.groups,
+    #                         e=child_module.c / child_module.cv2.conv.out_channels)
+    #         transfer_weights_c2f_to_c2f_v2(child_module, c2f_v2)
+    #         setattr(module, name, c2f_v2)
+    #     else:
+    #         replace_c2f_with_c2f_v2(child_module)
     
     # for yolov8-Faster-GFPN-P2-EfficientHead.yaml
     # for name, child_module in module.named_children():

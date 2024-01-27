@@ -42,6 +42,7 @@ from ultralytics.nn.extra_modules import Detect_Efficient
 from ultralytics.nn.extra_modules.block import Faster_Block, Fusion, IFM, InjectionMultiSum_Auto_pool, TopBasicLayer, SimFusion_3in, SimFusion_4in, AdvPoolFusion, PyramidPoolAgg, RepVGGBlock
 from ultralytics.nn.extra_modules.rep_block import DiverseBranchBlock
 from ultralytics.nn.backbone.convnextv2 import LayerNorm
+from ultralytics.nn.extra_modules.attention import TripletAttention
 
 class HiddenPrints:
     def __enter__(self):
@@ -108,7 +109,7 @@ def get_pruner(opt, model, example_inputs):
     round_to = None
     
     # ignore output layers
-    # for yolov8.yaml
+    # for yolov8-SCConv-b2-Triplet-v1.yaml #TODO: 貌似不需要跳过注意力,与yolov8一致，仅跳过Detect即可
     for k, m in model.named_modules():
         if isinstance(m, Detect):
             ignored_layers.append(m.cv2[0][2])
@@ -118,6 +119,19 @@ def get_pruner(opt, model, example_inputs):
             ignored_layers.append(m.cv3[1][2])
             ignored_layers.append(m.cv3[2][2])
             ignored_layers.append(m.dfl)
+        # if isinstance(m, TripletAttention):
+        #     ignored_layers.append(m)
+    
+    # for yolov8.yaml
+    # for k, m in model.named_modules():
+    #     if isinstance(m, Detect):
+    #         ignored_layers.append(m.cv2[0][2])
+    #         ignored_layers.append(m.cv2[1][2])
+    #         ignored_layers.append(m.cv2[2][2])
+    #         ignored_layers.append(m.cv3[0][2])
+    #         ignored_layers.append(m.cv3[1][2])
+    #         ignored_layers.append(m.cv3[2][2])
+    #         ignored_layers.append(m.dfl)
     
     # for yolov8-Faster-GFPN-P2-EfficientHead.yaml
     # for k, m in model.named_modules():
