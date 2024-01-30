@@ -119,7 +119,7 @@ def fuse_bn(conv, bn):
     return conv.weight * (bn.weight / std).reshape(-1, 1, 1, 1), bn.bias + (conv_bias - bn.running_mean) * bn.weight / std
 
 def convert_dilated_to_nondilated(kernel, dilate_rate):
-    identity_kernel = torch.ones((1, 1, 1, 1))
+    identity_kernel = torch.ones((1, 1, 1, 1)).to(kernel.device)
     if kernel.size(1) == 1:
         #   This is a DW kernel
         dilated = F.conv_transpose2d(kernel, identity_kernel, stride=dilate_rate)

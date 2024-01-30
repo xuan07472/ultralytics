@@ -12,13 +12,14 @@ from .rep_block import DiverseBranchBlock
 from .kernel_warehouse import KWConv
 from .dynamic_snake_conv import DySnakeConv
 from .ops_dcnv3.modules import DCNv3, DCNv3_DyHead
+
 from .orepa import *
 from .RFAConv import *
 from ultralytics.utils.torch_utils import make_divisible
 from timm.layers import trunc_normal_
 
 __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Faster', 'C3_ODConv', 'C2f_ODConv', 'Partial_conv3', 'C2f_Faster_EMA', 'C3_Faster_EMA', 'C2f_DBB',
-           'GSConv', 'VoVGSCSP', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
+           'GSConv', 'GSConvns', 'VoVGSCSP', 'VoVGSCSPns', 'VoVGSCSPC', 'C2f_CloAtt', 'C3_CloAtt', 'SCConv', 'C3_SCConv', 'C2f_SCConv', 'ScConv', 'C3_ScConv', 'C2f_ScConv',
            'LAWDS', 'EMSConv', 'EMSConvP', 'C3_EMSC', 'C3_EMSCP', 'C2f_EMSC', 'C2f_EMSCP', 'RCSOSA', 'C3_KW', 'C2f_KW',
            'C3_DySnakeConv', 'C2f_DySnakeConv', 'DCNv2', 'C3_DCNv2', 'C2f_DCNv2', 'DCNV3_YOLO', 'C3_DCNv3', 'C2f_DCNv3', 'FocalModulation',
            'C3_OREPA', 'C2f_OREPA', 'C3_DBB', 'C3_REPVGGOREPA', 'C2f_REPVGGOREPA', 'C3_DCNv2_Dynamic', 'C2f_DCNv2_Dynamic',
@@ -27,7 +28,8 @@ __all__ = ['DyHeadBlock', 'DyHeadBlockWithDCNV3', 'Fusion', 'C2f_Faster', 'C3_Fa
            'BiFusion', 'RepBlock', 'C3_EMBC', 'C2f_EMBC', 'SPPF_LSKA', 'C3_DAttention', 'C2f_DAttention', 'C3_Parc', 'C2f_Parc', 'C3_DWR', 'C2f_DWR',
            'C3_RFAConv', 'C2f_RFAConv', 'C3_RFCBAMConv', 'C2f_RFCBAMConv', 'C3_RFCAConv', 'C2f_RFCAConv', 'Ghost_HGBlock', 'Rep_HGBlock',
            'C3_FocusedLinearAttention', 'C2f_FocusedLinearAttention', 'C3_MLCA', 'C2f_MLCA', 'AKConv', 'C3_AKConv', 'C2f_AKConv',
-           'C3_UniRepLKNetBlock', 'C2f_UniRepLKNetBlock', 'C3_DRB', 'C2f_DRB', 'C3_DWR_DRB', 'C2f_DWR_DRB']
+           'C3_UniRepLKNetBlock', 'C2f_UniRepLKNetBlock', 'C3_DRB', 'C2f_DRB', 'C3_DWR_DRB', 'C2f_DWR_DRB', 'Zoom_cat', 'ScalSeq', 'Add', 'CSP_EDLAN', 'asf_attention_model',
+           'C2f_AggregatedAtt', 'C3_AggregatedAtt', 'SDI', 'DCNV4_YOLO', 'C3_DCNv4', 'C2f_DCNv4', 'DyHeadBlockWithDCNV4', 'ChannelAttention_HSFPN', 'Multiply', 'DySample', 'CARAFE', 'HWD']
 
 def autopad(k, p=None, d=1):  # kernel, padding, dilation
     """Pad to 'same' shape outputs."""
@@ -42,7 +44,7 @@ try:
     from mmcv.cnn import build_activation_layer, build_norm_layer
     from mmcv.ops.modulated_deform_conv import ModulatedDeformConv2d
     from mmengine.model import constant_init, normal_init
-except ImportError:
+except ImportError as e:
     pass
 
 def _make_divisible(v, divisor, min_value=None):
@@ -351,6 +353,87 @@ class DyHeadBlockWithDCNV3(nn.Module):
         mask = mask.reshape(N, H, W, -1).type(dtype)
         return offset, mask
 
+try:
+    from DCNv4.modules.dcnv4 import DCNv4_Dyhead
+except ImportError as e:
+    pass
+
+class DyHeadBlockWithDCNV4(nn.Module):
+    """DyHead Block with three types of attention.
+    HSigmoid arguments in default act_cfg follow official code, not paper.
+    https://github.com/microsoft/DynamicHead/blob/master/dyhead/dyrelu.py
+    """
+
+    def __init__(self,
+                 in_channels,
+                 norm_type='GN',
+                 zero_init_offset=True,
+                 act_cfg=dict(type='HSigmoid', bias=3.0, divisor=6.0)):
+        super().__init__()
+        self.zero_init_offset = zero_init_offset
+        # (offset_x, offset_y, mask) * kernel_size_y * kernel_size_x
+        self.offset_and_mask_dim = int(math.ceil((9 * 3)/8)*8)
+        
+        self.dw_conv_high = Conv(in_channels, in_channels, 3, g=in_channels)
+        self.dw_conv_mid = Conv(in_channels, in_channels, 3, g=in_channels)
+        self.dw_conv_low = Conv(in_channels, in_channels, 3, g=in_channels)
+        
+        self.spatial_conv_high = DCNv4_Dyhead(in_channels, group=1)
+        self.spatial_conv_mid = DCNv4_Dyhead(in_channels, group=1)
+        self.spatial_conv_low = DCNv4_Dyhead(in_channels, group=1)
+        self.maxpool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.spatial_conv_offset = nn.Conv2d(
+            in_channels, self.offset_and_mask_dim, 1, padding=0, groups=1)
+        self.scale_attn_module = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1), nn.Conv2d(in_channels, 1, 1),
+            nn.ReLU(inplace=True), build_activation_layer(act_cfg))
+        self.task_attn_module = DyReLU(in_channels)
+        self._init_weights()
+
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                normal_init(m, 0, 0.01)
+        if self.zero_init_offset:
+            constant_init(self.spatial_conv_offset, 0)
+
+    def forward(self, x):
+        """Forward function."""
+        outs = []
+        for level in range(len(x)):
+            # calculate offset and mask of DCNv2 from middle-level feature
+            mid_feat_ = self.dw_conv_mid(x[level])
+            offset_and_mask = self.get_offset_mask(mid_feat_)
+
+            mid_feat = self.spatial_conv_mid(x[level], offset_and_mask)
+            sum_feat = mid_feat * self.scale_attn_module(mid_feat)
+            summed_levels = 1
+            if level > 0:
+                low_feat_ = self.dw_conv_low(x[level - 1])
+                offset_and_mask = self.get_offset_mask(low_feat_)
+                low_feat = self.spatial_conv_low(x[level - 1], offset_and_mask)
+                low_feat = self.maxpool(low_feat)
+                sum_feat += low_feat * self.scale_attn_module(low_feat)
+                summed_levels += 1
+            if level < len(x) - 1:
+                # this upsample order is weird, but faster than natural order
+                # https://github.com/microsoft/DynamicHead/issues/25
+                high_feat_ = self.dw_conv_high(x[level + 1])
+                offset_and_mask = self.get_offset_mask(high_feat_)
+                high_feat = F.interpolate(
+                    self.spatial_conv_high(x[level + 1], offset_and_mask),
+                    size=x[level].shape[-2:],
+                    mode='bilinear',
+                    align_corners=True)
+                sum_feat += high_feat * self.scale_attn_module(high_feat)
+                summed_levels += 1
+            outs.append(self.task_attn_module(sum_feat / summed_levels))
+        return outs
+    
+    def get_offset_mask(self, x):
+        offset_mask = self.spatial_conv_offset(x).permute(0, 2, 3, 1)
+        return offset_mask
+
 ######################################## DyHead end ########################################
 
 ######################################## BIFPN begin ########################################
@@ -359,18 +442,21 @@ class Fusion(nn.Module):
     def __init__(self, inc_list, fusion='bifpn') -> None:
         super().__init__()
         
-        assert fusion in ['weight', 'adaptive', 'concat', 'bifpn']
+        assert fusion in ['weight', 'adaptive', 'concat', 'bifpn', 'SDI']
         self.fusion = fusion
         
         if self.fusion == 'bifpn':
             self.fusion_weight = nn.Parameter(torch.ones(len(inc_list), dtype=torch.float32), requires_grad=True)
             self.relu = nn.ReLU()
             self.epsilon = 1e-4
+        elif self.fusion == 'SDI':
+            self.SDI = SDI(inc_list)
         else:
             self.fusion_conv = nn.ModuleList([Conv(inc, inc, 1) for inc in inc_list])
 
             if self.fusion == 'adaptive':
                 self.fusion_adaptive = Conv(sum(inc_list), len(inc_list), 1)
+        
     
     def forward(self, x):
         if self.fusion in ['weight', 'adaptive']:
@@ -388,6 +474,8 @@ class Fusion(nn.Module):
             fusion_weight = self.relu(self.fusion_weight.clone())
             fusion_weight = fusion_weight / (torch.sum(fusion_weight, dim=0))
             return torch.sum(torch.stack([fusion_weight[i] * x[i] for i in range(len(x))], dim=0), dim=0)
+        elif self.fusion == 'SDI':
+            return self.SDI(x)
 
 ######################################## BIFPN end ########################################
 
@@ -807,6 +895,19 @@ class GSConv(nn.Module):
 
         return torch.cat((y[0], y[1]), 1)
 
+class GSConvns(GSConv):
+    # GSConv with a normative-shuffle https://github.com/AlanLi1997/slim-neck-by-gsconv
+    def __init__(self, c1, c2, k=1, s=1, p=None, g=1, act=True):
+        super().__init__(c1, c2, k, s, p, g, act=True)
+        c_ = c2 // 2
+        self.shuf = nn.Conv2d(c_ * 2, c2, 1, 1, 0, bias=False)
+
+    def forward(self, x):
+        x1 = self.cv1(x)
+        x2 = torch.cat((x1, self.cv2(x1)), 1)
+        # normative-shuffle, TRT supported
+        return nn.ReLU()(self.shuf(x2))
+
 class GSBottleneck(nn.Module):
     # GS Bottleneck https://github.com/AlanLi1997/slim-neck-by-gsconv
     def __init__(self, c1, c2, k=3, s=1, e=0.5):
@@ -821,6 +922,16 @@ class GSBottleneck(nn.Module):
     def forward(self, x):
         return self.conv_lighting(x) + self.shortcut(x)
 
+class GSBottleneckns(GSBottleneck):
+    # GS Bottleneck https://github.com/AlanLi1997/slim-neck-by-gsconv
+    def __init__(self, c1, c2, k=3, s=1, e=0.5):
+        super().__init__(c1, c2, k, s, e)
+        c_ = int(c2*e)
+        # for lighting
+        self.conv_lighting = nn.Sequential(
+            GSConvns(c1, c_, 1, 1),
+            GSConvns(c_, c2, 3, 1, act=False))
+        
 class GSBottleneckC(GSBottleneck):
     # cheap GS Bottleneck https://github.com/AlanLi1997/slim-neck-by-gsconv
     def __init__(self, c1, c2, k=3, s=1):
@@ -842,6 +953,12 @@ class VoVGSCSP(nn.Module):
         x1 = self.gsb(self.cv1(x))
         y = self.cv2(x)
         return self.cv3(torch.cat((y, x1), dim=1))
+
+class VoVGSCSPns(VoVGSCSP):
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.gsb = nn.Sequential(*(GSBottleneckns(c_, c_, e=1.0) for _ in range(n)))
 
 class VoVGSCSPC(VoVGSCSP):
     # cheap VoVGSCSP module with GSBottleneck
@@ -3245,3 +3362,433 @@ class C2f_DWR_DRB(C2f):
         self.m = nn.ModuleList(DWR_DRB(self.c) for _ in range(n))
     
 ######################################## Dilation-wise Residual DilatedReparamBlock end ########################################
+
+######################################## Attentional Scale Sequence Fusion start ########################################
+
+class Zoom_cat(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        l, m, s = x[0], x[1], x[2]
+        tgt_size = m.shape[2:]
+        l = F.adaptive_max_pool2d(l, tgt_size) + F.adaptive_avg_pool2d(l, tgt_size)
+        s = F.interpolate(s, m.shape[2:], mode='nearest')
+        lms = torch.cat([l, m, s], dim=1)
+        return lms
+
+class ScalSeq(nn.Module):
+    def __init__(self, inc, channel):
+        super(ScalSeq, self).__init__()
+        if channel != inc[0]:
+            self.conv0 = Conv(inc[0], channel,1)
+        self.conv1 =  Conv(inc[1], channel,1)
+        self.conv2 =  Conv(inc[2], channel,1)
+        self.conv3d = nn.Conv3d(channel,channel,kernel_size=(1,1,1))
+        self.bn = nn.BatchNorm3d(channel)
+        self.act = nn.LeakyReLU(0.1)
+        self.pool_3d = nn.MaxPool3d(kernel_size=(3,1,1))
+
+    def forward(self, x):
+        p3, p4, p5 = x[0],x[1],x[2]
+        if hasattr(self, 'conv0'):
+            p3 = self.conv0(p3)
+        p4_2 = self.conv1(p4)
+        p4_2 = F.interpolate(p4_2, p3.size()[2:], mode='nearest')
+        p5_2 = self.conv2(p5)
+        p5_2 = F.interpolate(p5_2, p3.size()[2:], mode='nearest')
+        p3_3d = torch.unsqueeze(p3, -3)
+        p4_3d = torch.unsqueeze(p4_2, -3)
+        p5_3d = torch.unsqueeze(p5_2, -3)
+        combine = torch.cat([p3_3d, p4_3d, p5_3d],dim = 2)
+        conv_3d = self.conv3d(combine)
+        bn = self.bn(conv_3d)
+        act = self.act(bn)
+        x = self.pool_3d(act)
+        x = torch.squeeze(x, 2)
+        return x
+    
+class Add(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, x):
+        return torch.sum(torch.stack(x, dim=0), dim=0)
+
+class asf_channel_att(nn.Module):
+    def __init__(self, channel, b=1, gamma=2):
+        super(asf_channel_att, self).__init__()
+        kernel_size = int(abs((math.log(channel, 2) + b) / gamma))
+        kernel_size = kernel_size if kernel_size % 2 else kernel_size + 1
+        
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.conv = nn.Conv1d(1, 1, kernel_size=kernel_size, padding=(kernel_size - 1) // 2, bias=False) 
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, x):
+        y = self.avg_pool(x)
+        y = y.squeeze(-1)
+        y = y.transpose(-1, -2)
+        y = self.conv(y).transpose(-1, -2).unsqueeze(-1)
+        y = self.sigmoid(y)
+        return x * y.expand_as(x)
+    
+class asf_local_att(nn.Module):
+    def __init__(self, channel, reduction=16):
+        super(asf_local_att, self).__init__()
+        
+        self.conv_1x1 = nn.Conv2d(in_channels=channel, out_channels=channel//reduction, kernel_size=1, stride=1, bias=False)
+ 
+        self.relu   = nn.ReLU()
+        self.bn     = nn.BatchNorm2d(channel//reduction)
+ 
+        self.F_h = nn.Conv2d(in_channels=channel//reduction, out_channels=channel, kernel_size=1, stride=1, bias=False)
+        self.F_w = nn.Conv2d(in_channels=channel//reduction, out_channels=channel, kernel_size=1, stride=1, bias=False)
+ 
+        self.sigmoid_h = nn.Sigmoid()
+        self.sigmoid_w = nn.Sigmoid()
+ 
+    def forward(self, x):
+        _, _, h, w = x.size()
+        
+        x_h = torch.mean(x, dim = 3, keepdim = True).permute(0, 1, 3, 2)
+        x_w = torch.mean(x, dim = 2, keepdim = True)
+ 
+        x_cat_conv_relu = self.relu(self.bn(self.conv_1x1(torch.cat((x_h, x_w), 3))))
+ 
+        x_cat_conv_split_h, x_cat_conv_split_w = x_cat_conv_relu.split([h, w], 3)
+ 
+        s_h = self.sigmoid_h(self.F_h(x_cat_conv_split_h.permute(0, 1, 3, 2)))
+        s_w = self.sigmoid_w(self.F_w(x_cat_conv_split_w))
+ 
+        out = x * s_h.expand_as(x) * s_w.expand_as(x)
+        return out
+    
+class asf_attention_model(nn.Module):
+    # Concatenate a list of tensors along dimension
+    def __init__(self, ch=256):
+        super().__init__()
+        self.channel_att = asf_channel_att(ch)
+        self.local_att = asf_local_att(ch)
+    def forward(self, x):
+        input1,input2 = x[0], x[1]
+        input1 = self.channel_att(input1)
+        x = input1 + input2
+        x = self.local_att(x)
+        return x
+
+######################################## Attentional Scale Sequence Fusion end ########################################
+
+######################################## DualConv start ########################################
+
+class DualConv(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1, g=4):
+        """
+        Initialize the DualConv class.
+        :param input_channels: the number of input channels
+        :param output_channels: the number of output channels
+        :param stride: convolution stride
+        :param g: the value of G used in DualConv
+        """
+        super(DualConv, self).__init__()
+        # Group Convolution
+        self.gc = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, groups=g, bias=False)
+        # Pointwise Convolution
+        self.pwc = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False)
+
+    def forward(self, input_data):
+        """
+        Define how DualConv processes the input images or input feature maps.
+        :param input_data: input images or input feature maps
+        :return: return output feature maps
+        """
+        return self.gc(input_data) + self.pwc(input_data)
+
+class EDLAN(nn.Module):
+    def __init__(self, c, g=4) -> None:
+        super().__init__()
+        self.m = nn.Sequential(DualConv(c, c, 1, g=g), DualConv(c, c, 1, g=g))
+    
+    def forward(self, x):
+        return self.m(x)
+
+class CSP_EDLAN(nn.Module):
+    # CSP Efficient Dual Layer Aggregation Networks
+    def __init__(self, c1, c2, n=1, g=4, e=0.5) -> None:
+        super().__init__()
+        self.c = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, 2 * self.c, 1, 1)
+        self.cv2 = Conv((2 + n) * self.c, c2, 1)  # optional act=FReLU(c2)
+        self.m = nn.ModuleList(EDLAN(self.c, g=g) for _ in range(n))
+
+    def forward(self, x):
+        """Forward pass through C2f layer."""
+        y = list(self.cv1(x).chunk(2, 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
+
+    def forward_split(self, x):
+        """Forward pass using split() instead of chunk()."""
+        y = list(self.cv1(x).split((self.c, self.c), 1))
+        y.extend(m(y[-1]) for m in self.m)
+        return self.cv2(torch.cat(y, 1))
+
+######################################## DualConv end ########################################
+
+######################################## C3 C2f TransNeXt_AggregatedAttention start ########################################
+
+class Bottleneck_AggregatedAttention(Bottleneck):
+    """Standard bottleneck With CloAttention."""
+
+    def __init__(self, c1, c2, input_resolution, sr_ratio, shortcut=True, g=1, k=..., e=0.5):
+        super().__init__(c1, c2, shortcut, g, k, e)
+        self.attention = TransNeXt_AggregatedAttention(c2, input_resolution, sr_ratio)
+    
+    def forward(self, x):
+        """'forward()' applies the YOLOv5 FPN to input data."""
+        return x + self.attention(self.cv2(self.cv1(x))) if self.add else self.attention(self.cv2(self.cv1(x)))
+
+class C2f_AggregatedAtt(C2f):
+    def __init__(self, c1, c2, n=1, input_resolution=None, sr_ratio=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_AggregatedAttention(self.c, self.c, input_resolution, sr_ratio, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+class C3_AggregatedAtt(C3):
+    def __init__(self, c1, c2, n=1, input_resolution=None, sr_ratio=None, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_AggregatedAttention(c_, c_, input_resolution, sr_ratio, shortcut, g, k=((1, 1), (3, 3)), e=1.0) for _ in range(n)))
+
+######################################## C3 C2f TransNeXt_AggregatedAttention end ########################################
+
+######################################## Semantics and Detail Infusion end ########################################
+
+class SDI(nn.Module):
+    def __init__(self, channels):
+        super().__init__()
+
+        # self.convs = nn.ModuleList([nn.Conv2d(channel, channels[0], kernel_size=3, stride=1, padding=1) for channel in channels])
+        self.convs = nn.ModuleList([GSConv(channel, channels[0]) for channel in channels])
+
+    def forward(self, xs):
+        ans = torch.ones_like(xs[0])
+        target_size = xs[0].shape[2:]
+        for i, x in enumerate(xs):
+            if x.shape[-1] > target_size[-1]:
+                x = F.adaptive_avg_pool2d(x, (target_size[0], target_size[1]))
+            elif x.shape[-1] < target_size[-1]:
+                x = F.interpolate(x, size=(target_size[0], target_size[1]),
+                                      mode='bilinear', align_corners=True)
+            ans = ans * self.convs[i](x)
+        return ans
+
+######################################## Semantics and Detail Infusion end ########################################
+
+######################################## C3 C2f DCNV4 start ########################################
+
+try:
+    from DCNv4.modules.dcnv4 import DCNv4
+except ImportError as e:
+    pass
+
+class DCNV4_YOLO(nn.Module):
+    def __init__(self, inc, ouc, k=1, s=1, p=None, g=1, d=1, act=True):
+        super().__init__()
+        
+        if inc != ouc:
+            self.stem_conv = Conv(inc, ouc, k=1)
+        self.dcnv4 = DCNv4(ouc, kernel_size=k, stride=s, pad=autopad(k, p, d), group=g, dilation=d)
+        self.bn = nn.BatchNorm2d(ouc)
+        self.act = Conv.default_act if act is True else act if isinstance(act, nn.Module) else nn.Identity()
+    
+    def forward(self, x):
+        if hasattr(self, 'stem_conv'):
+            x = self.stem_conv(x)
+        x = self.dcnv4(x, (x.size(2), x.size(3)))
+        x = self.act(self.bn(x))
+        return x
+
+class Bottleneck_DCNV4(Bottleneck):
+    """Standard bottleneck with DCNV3."""
+
+    def __init__(self, c1, c2, shortcut=True, g=1, k=(3, 3), e=0.5):  # ch_in, ch_out, shortcut, groups, kernels, expand
+        super().__init__(c1, c2, shortcut, g, k, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.cv2 = DCNV4_YOLO(c_, c2, k[1])
+
+class C3_DCNv4(C3):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(Bottleneck_DCNV4(c_, c_, shortcut, g, k=(1, 3), e=1.0) for _ in range(n)))
+
+class C2f_DCNv4(C2f):
+    def __init__(self, c1, c2, n=1, shortcut=False, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        self.m = nn.ModuleList(Bottleneck_DCNV4(self.c, self.c, shortcut, g, k=(3, 3), e=1.0) for _ in range(n))
+
+######################################## C3 C2f DCNV4 end ########################################
+
+######################################## HS-FPN start ########################################
+
+class ChannelAttention_HSFPN(nn.Module):
+    def __init__(self, in_planes, ratio = 4, flag=True):
+        super(ChannelAttention_HSFPN, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.conv1 = nn.Conv2d(in_planes, in_planes // ratio, 1, bias=False)
+        self.relu = nn.ReLU()
+        self.conv2 = nn.Conv2d(in_planes // ratio, in_planes, 1, bias=False)
+        self.flag = flag
+        self.sigmoid = nn.Sigmoid()
+
+        nn.init.xavier_uniform_(self.conv1.weight)
+        nn.init.xavier_uniform_(self.conv2.weight)
+
+    def forward(self, x):
+        avg_out = self.conv2(self.relu(self.conv1(self.avg_pool(x))))
+        max_out = self.conv2(self.relu(self.conv1(self.max_pool(x))))
+        out = avg_out + max_out
+        return self.sigmoid(out) * x if self.flag else self.sigmoid(out)
+
+class Multiply(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+    
+    def forward(self, x):
+        return x[0] * x[1]
+    
+######################################## HS-FPN end ########################################
+
+######################################## DySample start ########################################
+
+class DySample(nn.Module):
+    def __init__(self, in_channels, scale=2, style='lp', groups=4, dyscope=False):
+        super().__init__()
+        self.scale = scale
+        self.style = style
+        self.groups = groups
+        assert style in ['lp', 'pl']
+        if style == 'pl':
+            assert in_channels >= scale ** 2 and in_channels % scale ** 2 == 0
+        assert in_channels >= groups and in_channels % groups == 0
+
+        if style == 'pl':
+            in_channels = in_channels // scale ** 2
+            out_channels = 2 * groups
+        else:
+            out_channels = 2 * groups * scale ** 2
+
+        self.offset = nn.Conv2d(in_channels, out_channels, 1)
+        normal_init(self.offset, std=0.001)
+        if dyscope:
+            self.scope = nn.Conv2d(in_channels, out_channels, 1)
+            constant_init(self.scope, val=0.)
+
+        self.register_buffer('init_pos', self._init_pos())
+
+    def _init_pos(self):
+        h = torch.arange((-self.scale + 1) / 2, (self.scale - 1) / 2 + 1) / self.scale
+        return torch.stack(torch.meshgrid([h, h])).transpose(1, 2).repeat(1, self.groups, 1).reshape(1, -1, 1, 1)
+
+    def sample(self, x, offset):
+        B, _, H, W = offset.shape
+        offset = offset.view(B, 2, -1, H, W)
+        coords_h = torch.arange(H) + 0.5
+        coords_w = torch.arange(W) + 0.5
+        coords = torch.stack(torch.meshgrid([coords_w, coords_h])
+                             ).transpose(1, 2).unsqueeze(1).unsqueeze(0).type(x.dtype).to(x.device)
+        normalizer = torch.tensor([W, H], dtype=x.dtype, device=x.device).view(1, 2, 1, 1, 1)
+        coords = 2 * (coords + offset) / normalizer - 1
+        coords = F.pixel_shuffle(coords.view(B, -1, H, W), self.scale).view(
+            B, 2, -1, self.scale * H, self.scale * W).permute(0, 2, 3, 4, 1).contiguous().flatten(0, 1)
+        return F.grid_sample(x.reshape(B * self.groups, -1, H, W), coords, mode='bilinear',
+                             align_corners=False, padding_mode="border").view(B, -1, self.scale * H, self.scale * W)
+
+    def forward_lp(self, x):
+        if hasattr(self, 'scope'):
+            offset = self.offset(x) * self.scope(x).sigmoid() * 0.5 + self.init_pos
+        else:
+            offset = self.offset(x) * 0.25 + self.init_pos
+        return self.sample(x, offset)
+
+    def forward_pl(self, x):
+        x_ = F.pixel_shuffle(x, self.scale)
+        if hasattr(self, 'scope'):
+            offset = F.pixel_unshuffle(self.offset(x_) * self.scope(x_).sigmoid(), self.scale) * 0.5 + self.init_pos
+        else:
+            offset = F.pixel_unshuffle(self.offset(x_), self.scale) * 0.25 + self.init_pos
+        return self.sample(x, offset)
+
+    def forward(self, x):
+        if self.style == 'pl':
+            return self.forward_pl(x)
+        return self.forward_lp(x)
+
+######################################## DySample end ########################################
+
+######################################## CARAFE start ########################################
+
+class CARAFE(nn.Module):
+    def __init__(self, c, k_enc=3, k_up=5, c_mid=64, scale=2):
+        """ The unofficial implementation of the CARAFE module.
+        The details are in "https://arxiv.org/abs/1905.02188".
+        Args:
+            c: The channel number of the input and the output.
+            c_mid: The channel number after compression.
+            scale: The expected upsample scale.
+            k_up: The size of the reassembly kernel.
+            k_enc: The kernel size of the encoder.
+        Returns:
+            X: The upsampled feature map.
+        """
+        super(CARAFE, self).__init__()
+        self.scale = scale
+
+        self.comp = Conv(c, c_mid)
+        self.enc = Conv(c_mid, (scale*k_up)**2, k=k_enc, act=False)
+        self.pix_shf = nn.PixelShuffle(scale)
+
+        self.upsmp = nn.Upsample(scale_factor=scale, mode='nearest')
+        self.unfold = nn.Unfold(kernel_size=k_up, dilation=scale, 
+                                padding=k_up//2*scale)
+
+    def forward(self, X):
+        b, c, h, w = X.size()
+        h_, w_ = h * self.scale, w * self.scale
+        
+        W = self.comp(X)                                # b * m * h * w
+        W = self.enc(W)                                 # b * 100 * h * w
+        W = self.pix_shf(W)                             # b * 25 * h_ * w_
+        W = torch.softmax(W, dim=1)                         # b * 25 * h_ * w_
+
+        X = self.upsmp(X)                               # b * c * h_ * w_
+        X = self.unfold(X)                              # b * 25c * h_ * w_
+        X = X.view(b, c, -1, h_, w_)                    # b * 25 * c * h_ * w_
+
+        X = torch.einsum('bkhw,bckhw->bchw', [W, X])    # b * c * h_ * w_
+        return X
+
+######################################## CARAFE end ########################################
+
+######################################## HWD start ########################################
+
+class HWD(nn.Module):
+    def __init__(self, in_ch, out_ch):
+        super(HWD, self).__init__()
+        from pytorch_wavelets import DWTForward
+        self.wt = DWTForward(J=1, mode='zero', wave='haar')
+        self.conv = Conv(in_ch * 4, out_ch, 1, 1)
+         
+    def forward(self, x):
+        yL, yH = self.wt(x)
+        y_HL = yH[0][:,:,0,::]
+        y_LH = yH[0][:,:,1,::]
+        y_HH = yH[0][:,:,2,::]
+        x = torch.cat([yL, y_HL, y_LH, y_HH], dim=1)        
+        x = self.conv(x)
+
+        return x
+
+######################################## HWD end ########################################

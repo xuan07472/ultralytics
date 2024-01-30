@@ -9,7 +9,7 @@ from ultralytics.utils.ops import crop_mask, xywh2xyxy, xyxy2xywh
 from ultralytics.utils.tal import TaskAlignedAssigner, dist2bbox, make_anchors
 from ultralytics.utils.atss import ATSSAssigner, generate_anchors
 
-from .metrics import bbox_iou, bbox_mpdiou, bbox_inner_iou, bbox_inner_mpdiou, wasserstein_loss
+from .metrics import bbox_iou, bbox_mpdiou, bbox_inner_iou, bbox_inner_mpdiou, wasserstein_loss, WiseIouLoss
 from .tal import bbox2dist
 
 import math
@@ -81,29 +81,47 @@ class VarifocalLoss(nn.Module):
     https://arxiv.org/abs/2008.13367.
     """
 
-    def __init__(self):
+    def __init__(self, alpha=0.75, gamma=2.0):
         """Initialize the VarifocalLoss class."""
         super().__init__()
+        self.alpha = alpha
+        self.gamma = gamma
 
-    @staticmethod
-    def forward(pred_score, gt_score, label, alpha=0.75, gamma=2.0):
+    def forward(self, pred_score, gt_score):
         """Computes varfocal loss."""
-        weight = alpha * pred_score.sigmoid().pow(gamma) * (1 - label) + gt_score * label
+        
+        weight = self.alpha * (pred_score.sigmoid() - gt_score).abs().pow(self.gamma) * (gt_score <= 0.0).float() + gt_score * (gt_score > 0.0).float()
         with torch.cuda.amp.autocast(enabled=False):
-            loss = (F.binary_cross_entropy_with_logits(pred_score.float(), gt_score.float(), reduction='none') *
-                    weight).mean(1).sum()
-        return loss
+            return F.binary_cross_entropy_with_logits(pred_score.float(), gt_score.float(), reduction='none') * weight
 
+class QualityfocalLoss(nn.Module):
+    def __init__(self, beta=2.0):
+        super().__init__()
+        self.beta = beta
+    
+    def forward(self, pred_score, gt_score, gt_target_pos_mask):
+        # negatives are supervised by 0 quality score
+        pred_sigmoid = pred_score.sigmoid()
+        scale_factor = pred_sigmoid
+        zerolabel = scale_factor.new_zeros(pred_score.shape)
+        with torch.cuda.amp.autocast(enabled=False):
+            loss = F.binary_cross_entropy_with_logits(pred_score, zerolabel, reduction='none') * scale_factor.pow(self.beta)
+        
+        scale_factor = gt_score[gt_target_pos_mask] - pred_sigmoid[gt_target_pos_mask]
+        with torch.cuda.amp.autocast(enabled=False):
+            loss[gt_target_pos_mask] = F.binary_cross_entropy_with_logits(pred_score[gt_target_pos_mask], gt_score[gt_target_pos_mask], reduction='none') * scale_factor.abs().pow(self.beta)
+        return loss
 
 class FocalLoss(nn.Module):
     """Wraps focal loss around existing loss_fcn(), i.e. criteria = FocalLoss(nn.BCEWithLogitsLoss(), gamma=1.5)."""
 
-    def __init__(self, ):
+    def __init__(self, gamma=1.5, alpha=0.25):
         """Initializer for FocalLoss class with no parameters."""
         super().__init__()
+        self.gamma = gamma
+        self.alpha = alpha
 
-    @staticmethod
-    def forward(pred, label, gamma=1.5, alpha=0.25):
+    def forward(self, pred, label):
         """Calculates and updates confusion matrix for object detection/classification tasks."""
         loss = F.binary_cross_entropy_with_logits(pred, label, reduction='none')
         # p_t = torch.exp(-loss)
@@ -112,12 +130,12 @@ class FocalLoss(nn.Module):
         # TF implementation https://github.com/tensorflow/addons/blob/v0.7.1/tensorflow_addons/losses/focal_loss.py
         pred_prob = pred.sigmoid()  # prob from logits
         p_t = label * pred_prob + (1 - label) * (1 - pred_prob)
-        modulating_factor = (1.0 - p_t) ** gamma
+        modulating_factor = (1.0 - p_t) ** self.gamma
         loss *= modulating_factor
-        if alpha > 0:
-            alpha_factor = label * alpha + (1 - label) * (1 - alpha)
+        if self.alpha > 0:
+            alpha_factor = label * self.alpha + (1 - label) * (1 - self.alpha)
             loss *= alpha_factor
-        return loss.mean(1).sum()
+        return loss
 
 
 class BboxLoss(nn.Module):
@@ -129,16 +147,28 @@ class BboxLoss(nn.Module):
         self.use_dfl = use_dfl
         self.nwd_loss = False
         self.iou_ratio = 0.5
+        
+        self.use_wiseiou = False
+        
+        if self.use_wiseiou:
+            self.wiou_loss = WiseIouLoss(ltype='WIoU', monotonous=False, inner_iou=False)
 
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask, mpdiou_hw=None):
         """IoU loss."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
-        # iou = bbox_inner_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True, ratio=0.7)
-        # iou = bbox_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw[fg_mask])
-        # iou = bbox_inner_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw[fg_mask], ratio=0.7)
-        loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
         
+        if self.use_wiseiou:
+            wiou = self.wiou_loss(pred_bboxes[fg_mask], target_bboxes[fg_mask], ret_iou=False, ratio=0.7).unsqueeze(-1)
+            # wiou = self.wiou_loss(pred_bboxes[fg_mask], target_bboxes[fg_mask], ret_iou=False, ratio=0.7, **{'scale':0.0}).unsqueeze(-1) # Wise-ShapeIoU,Wise-Inner-ShapeIoU
+            # wiou = self.wiou_loss(pred_bboxes[fg_mask], target_bboxes[fg_mask], ret_iou=False, ratio=0.7, **{'mpdiou_hw':mpdiou_hw[fg_mask]}).unsqueeze(-1) # Wise-MPDIoU,Wise-Inner-MPDIoU
+            loss_iou = (wiou * weight).sum() / target_scores_sum
+        else:
+            iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+            # iou = bbox_inner_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True, ratio=0.7)
+            # iou = bbox_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw[fg_mask])
+            # iou = bbox_inner_mpdiou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, mpdiou_hw=mpdiou_hw[fg_mask], ratio=0.7)
+            loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+                
         if self.nwd_loss:
             nwd = wasserstein_loss(pred_bboxes[fg_mask], target_bboxes[fg_mask])
             nwd_loss = ((1.0 - nwd) * weight).sum() / target_scores_sum
@@ -195,6 +225,9 @@ class v8DetectionLoss:
         self.bce = nn.BCEWithLogitsLoss(reduction='none')
         # self.bce = EMASlideLoss(nn.BCEWithLogitsLoss(reduction='none'))  # Exponential Moving Average Slide Loss
         # self.bce = SlideLoss(nn.BCEWithLogitsLoss(reduction='none')) # Slide Loss
+        # self.bce = FocalLoss(alpha=0.25, gamma=1.5) # FocalLoss
+        # self.bce = VarifocalLoss(alpha=0.75, gamma=2.0) # VarifocalLoss
+        # self.bce = QualityfocalLoss(beta=2.0) # QualityfocalLoss
         self.hyp = h
         self.stride = m.stride  # model strides
         self.nc = m.nc  # number of classes
@@ -278,19 +311,54 @@ class v8DetectionLoss:
         if isinstance(self.assigner, ATSSAssigner):
             anchors, _, n_anchors_list, _ = \
                generate_anchors(feats, self.fpn_strides, self.grid_cell_size, self.grid_cell_offset, device=feats[0].device)
-            _, target_bboxes, target_scores, fg_mask, _ = self.assigner(anchors, n_anchors_list, gt_labels, gt_bboxes, mask_gt, pred_bboxes.detach() * stride_tensor)
+            target_labels, target_bboxes, target_scores, fg_mask, _ = self.assigner(anchors, n_anchors_list, gt_labels, gt_bboxes, mask_gt, pred_bboxes.detach() * stride_tensor)
         # TAL
         else:
-            _, target_bboxes, target_scores, fg_mask, _ = self.assigner(
+            target_labels, target_bboxes, target_scores, fg_mask, _ = self.assigner(
                 pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
                 anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt)
 
         target_scores_sum = max(target_scores.sum(), 1)
 
         # cls loss
-        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
-        if isinstance(self.bce, nn.BCEWithLogitsLoss):
+        if isinstance(self.bce, (nn.BCEWithLogitsLoss, FocalLoss)):
             loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
+        elif isinstance(self.bce, VarifocalLoss):
+            if fg_mask.sum():
+                pos_ious = bbox_iou(pred_bboxes, target_bboxes / stride_tensor, xywh=False).clamp(min=1e-6).detach()
+                # 10.0x Faster than torch.one_hot
+                cls_iou_targets = torch.zeros((target_labels.shape[0], target_labels.shape[1], self.nc),
+                                        dtype=torch.int64,
+                                        device=target_labels.device)  # (b, h*w, 80)
+                cls_iou_targets.scatter_(2, target_labels.unsqueeze(-1), 1)
+                cls_iou_targets = pos_ious * cls_iou_targets
+                fg_scores_mask = fg_mask[:, :, None].repeat(1, 1, self.nc)  # (b, h*w, 80)
+                cls_iou_targets = torch.where(fg_scores_mask > 0, cls_iou_targets, 0)
+            else:
+                cls_iou_targets = torch.zeros((target_labels.shape[0], target_labels.shape[1], self.nc),
+                                        dtype=torch.int64,
+                                        device=target_labels.device)  # (b, h*w, 80)
+            loss[1] = self.bce(pred_scores, cls_iou_targets.to(dtype)).sum() / max(fg_mask.sum(), 1)  # BCE
+        elif isinstance(self.bce, QualityfocalLoss):
+            if fg_mask.sum():
+                pos_ious = bbox_iou(pred_bboxes, target_bboxes / stride_tensor, xywh=False).clamp(min=1e-6).detach()
+                # 10.0x Faster than torch.one_hot
+                targets_onehot = torch.zeros((target_labels.shape[0], target_labels.shape[1], self.nc),
+                                        dtype=torch.int64,
+                                        device=target_labels.device)  # (b, h*w, 80)
+                targets_onehot.scatter_(2, target_labels.unsqueeze(-1), 1)
+                cls_iou_targets = pos_ious * targets_onehot
+                fg_scores_mask = fg_mask[:, :, None].repeat(1, 1, self.nc)  # (b, h*w, 80)
+                targets_onehot_pos = torch.where(fg_scores_mask > 0, targets_onehot, 0)
+                cls_iou_targets = torch.where(fg_scores_mask > 0, cls_iou_targets, 0)
+            else:
+                cls_iou_targets = torch.zeros((target_labels.shape[0], target_labels.shape[1], self.nc),
+                                        dtype=torch.int64,
+                                        device=target_labels.device)  # (b, h*w, 80)
+                targets_onehot_pos = torch.zeros((target_labels.shape[0], target_labels.shape[1], self.nc),
+                                        dtype=torch.int64,
+                                        device=target_labels.device)  # (b, h*w, 80)
+            loss[1] = self.bce(pred_scores, cls_iou_targets.to(dtype), targets_onehot_pos.to(torch.bool)).sum() / max(fg_mask.sum(), 1)
 
         # bbox loss
         if fg_mask.sum():
@@ -339,16 +407,15 @@ class v8DetectionLoss:
         pred_bboxes = self.bbox_decode(anchor_points, pred_distri)
         pred_bboxes_aux = self.bbox_decode(anchor_points, pred_distri_aux)  # xyxy, (b, h*w, 4)
 
-        _, target_bboxes, target_scores, fg_mask, _ = self.assigner(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+        target_labels, target_bboxes, target_scores, fg_mask, _ = self.assigner(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
                 anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt)
-        _, target_bboxes_aux, target_scores_aux, fg_mask_aux, _ = self.assigner_aux(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
+        target_labels_aux, target_bboxes_aux, target_scores_aux, fg_mask_aux, _ = self.assigner_aux(pred_scores.detach().sigmoid(), (pred_bboxes.detach() * stride_tensor).type(gt_bboxes.dtype),
                 anchor_points * stride_tensor, gt_labels, gt_bboxes, mask_gt)
 
         target_scores_sum = max(target_scores.sum(), 1)
         target_scores_sum_aux = max(target_scores_aux.sum(), 1)
 
         # cls loss
-        # loss[1] = self.varifocal_loss(pred_scores, target_scores, target_labels) / target_scores_sum  # VFL way
         if isinstance(self.bce, nn.BCEWithLogitsLoss):
             loss[1] = self.bce(pred_scores, target_scores.to(dtype)).sum() / target_scores_sum  # BCE
             loss[1] += self.bce(pred_scores_aux, target_scores_aux.to(dtype)).sum() / target_scores_sum_aux * self.aux_loss_ratio  # BCE

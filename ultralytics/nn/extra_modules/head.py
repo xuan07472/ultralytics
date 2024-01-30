@@ -9,7 +9,7 @@ from .rep_block import *
 from .afpn import AFPN_P345, AFPN_P345_Custom, AFPN_P2345, AFPN_P2345_Custom
 from ultralytics.utils.tal import dist2bbox, make_anchors
 
-__all__ = ['Detect_DyHead', 'Detect_DyHeadWithDCNV3', 'Detect_AFPN_P345', 'Detect_AFPN_P345_Custom', 'Detect_AFPN_P2345', 'Detect_AFPN_P2345_Custom', 'Detect_Efficient', 'DetectAux',
+__all__ = ['Detect_DyHead', 'Detect_DyHeadWithDCNV3', 'Detect_DyHeadWithDCNV4', 'Detect_AFPN_P345', 'Detect_AFPN_P345_Custom', 'Detect_AFPN_P2345', 'Detect_AFPN_P2345_Custom', 'Detect_Efficient', 'DetectAux',
            'Segment_Efficient']
 
 class Detect_DyHead(nn.Module):
@@ -72,6 +72,11 @@ class Detect_DyHeadWithDCNV3(Detect_DyHead):
     def __init__(self, nc=80, hidc=256, block_num=2, ch=()):
         super().__init__(nc, hidc, block_num, ch)
         self.dyhead = nn.Sequential(*[DyHeadBlockWithDCNV3(hidc) for i in range(block_num)])
+
+class Detect_DyHeadWithDCNV4(Detect_DyHead):
+    def __init__(self, nc=80, hidc=256, block_num=2, ch=()):
+        super().__init__(nc, hidc, block_num, ch)
+        self.dyhead = nn.Sequential(*[DyHeadBlockWithDCNV4(hidc) for i in range(block_num)])
 
 class Detect_AFPN_P345(nn.Module):
     """YOLOv8 Detect head with AFPN for detection models."""

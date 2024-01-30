@@ -28,6 +28,7 @@ from ultralytics.nn.backbone.SwinTransformer import *
 from ultralytics.nn.backbone.repvit import *
 from ultralytics.nn.backbone.CSwomTramsformer import *
 from ultralytics.nn.backbone.UniRepLKNet import *
+from ultralytics.nn.backbone.TransNext import *
 
 try:
     import thop
@@ -208,7 +209,7 @@ class BaseModel(nn.Module):
         self = super()._apply(fn)
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom, 
-                          Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Segment_Efficient)):
+                          Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Detect_DyHeadWithDCNV4, Segment, Segment_Efficient)):
             m.stride = fn(m.stride)
             m.anchors = fn(m.anchors)
             m.strides = fn(m.strides)
@@ -279,7 +280,7 @@ class DetectionModel(BaseModel):
         # Build strides
         m = self.model[-1]  # Detect()
         if isinstance(m, (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom, 
-                          Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Segment_Efficient, Pose)):
+                          Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Detect_DyHeadWithDCNV4, Segment, Segment_Efficient, Pose)):
             s = 640  # 2x min stride
             m.inplace = self.inplace
             if isinstance(m, (DetectAux,)):
@@ -289,7 +290,7 @@ class DetectionModel(BaseModel):
             try:
                 m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(2, ch, s, s))])  # forward
             except RuntimeError as e:
-                if 'Not implemented on the CPU' in str(e):
+                if 'Not implemented on the CPU' in str(e) or 'Input type (torch.FloatTensor) and weight type (torch.cuda.FloatTensor)' in str(e) or 'CUDA tensor' in str(e):
                     self.model.to(torch.device('cuda'))
                     m.stride = torch.tensor([s / x.shape[-2] for x in forward(torch.zeros(2, ch, s, s).to(torch.device('cuda')))])  # forward
                 else:
@@ -665,7 +666,7 @@ def attempt_load_weights(weights, device=None, inplace=True, fuse=False):
     for m in ensemble.modules():
         t = type(m)
         if t in (nn.Hardswish, nn.LeakyReLU, nn.ReLU, nn.ReLU6, nn.SiLU, Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, 
-                 Detect_AFPN_P345_Custom, Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Segment_Efficient):
+                 Detect_AFPN_P345_Custom, Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Detect_DyHeadWithDCNV4, Segment, Segment_Efficient):
             m.inplace = inplace
         elif t is nn.Upsample and not hasattr(m, 'recompute_scale_factor'):
             m.recompute_scale_factor = None  # torch 1.11.0 compatibility
@@ -757,8 +758,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
 
         n = n_ = max(round(n * depth), 1) if n > 1 else n  # depth gain
         if m in (Classify, Conv, ConvTranspose, GhostConv, Bottleneck, GhostBottleneck, SPP, SPPF, DWConv, Focus,
-                 BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3, C2f_Faster, C2f_ODConv,
-                 C2f_Faster_EMA, C2f_DBB, GSConv, VoVGSCSP, VoVGSCSPC, C2f_CloAtt, C3_CloAtt, SCConv, C2f_SCConv, C3_SCConv, C2f_ScConv, C3_ScConv,
+                 BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, nn.Conv2d, nn.ConvTranspose2d, DWConvTranspose2d, C3x, RepC3, C2f_Faster, C2f_ODConv,
+                 C2f_Faster_EMA, C2f_DBB, GSConv, GSConvns, VoVGSCSP, VoVGSCSPns, VoVGSCSPC, C2f_CloAtt, C3_CloAtt, SCConv, C2f_SCConv, C3_SCConv, C2f_ScConv, C3_ScConv,
                  C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, KWConv, C2f_KW, C3_KW, DySnakeConv, C2f_DySnakeConv, C3_DySnakeConv,
                  DCNv2, C3_DCNv2, C2f_DCNv2, DCNV3_YOLO, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv,
                  OREPA, OREPA_LargeConv, RepVGGBlock_OREPA, C3_OREPA, C2f_OREPA, C3_DBB, C3_REPVGGOREPA, C2f_REPVGGOREPA,
@@ -767,7 +768,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                  C3_Parc, C2f_Parc, C3_DWR, C2f_DWR, RFAConv, RFCAConv, RFCBAMConv, C3_RFAConv, C2f_RFAConv,
                  C3_RFCBAMConv, C2f_RFCBAMConv, C3_RFCAConv, C2f_RFCAConv, C3_FocusedLinearAttention, C2f_FocusedLinearAttention,
                  C3_AKConv, C2f_AKConv, AKConv, C3_MLCA, C2f_MLCA,
-                 C3_UniRepLKNetBlock, C2f_UniRepLKNetBlock, C3_DRB, C2f_DRB, C3_DWR_DRB, C2f_DWR_DRB):
+                 C3_UniRepLKNetBlock, C2f_UniRepLKNetBlock, C3_DRB, C2f_DRB, C3_DWR_DRB, C2f_DWR_DRB, CSP_EDLAN,
+                 C3_AggregatedAtt, C2f_AggregatedAtt, DCNV4_YOLO, C3_DCNv4, C2f_DCNv4, HWD):
             if args[0] == 'head_channel':
                 args[0] = d[args[0]]
             c1, c2 = ch[f], args[0]
@@ -782,14 +784,15 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                 c2 = c2 * 3
             
             if m in (BottleneckCSP, C1, C2, C2f, C3, C3TR, C3Ghost, C3x, RepC3, C2f_Faster, C2f_ODConv, C2f_Faster_EMA, C2f_DBB,
-                     VoVGSCSP, VoVGSCSPC, C2f_CloAtt, C3_CloAtt, C2f_SCConv, C3_SCConv, C2f_ScConv, C3_ScConv,
+                     VoVGSCSP, VoVGSCSPns, VoVGSCSPC, C2f_CloAtt, C3_CloAtt, C2f_SCConv, C3_SCConv, C2f_ScConv, C3_ScConv,
                      C3_EMSC, C3_EMSCP, C2f_EMSC, C2f_EMSCP, RCSOSA, C2f_KW, C3_KW, C2f_DySnakeConv, C3_DySnakeConv,
                      C3_DCNv2, C2f_DCNv2, C3_DCNv3, C2f_DCNv3, C3_Faster, C3_Faster_EMA, C3_ODConv, C3_OREPA, C2f_OREPA, C3_DBB,
                      C3_REPVGGOREPA, C2f_REPVGGOREPA, C3_DCNv2_Dynamic, C2f_DCNv2_Dynamic, C3_ContextGuided, C2f_ContextGuided, 
                      C3_MSBlock, C2f_MSBlock, C3_DLKA, C2f_DLKA, CSPStage, RepBlock, C3_EMBC, C2f_EMBC, C3_DAttention, C2f_DAttention,
                      C3_Parc, C2f_Parc, C3_DWR, C2f_DWR, C3_RFAConv, C2f_RFAConv, C3_RFCBAMConv, C2f_RFCBAMConv, C3_RFCAConv, C2f_RFCAConv,
                      C3_FocusedLinearAttention, C2f_FocusedLinearAttention, C3_AKConv, C2f_AKConv, C3_MLCA, C2f_MLCA,
-                     C3_UniRepLKNetBlock, C2f_UniRepLKNetBlock, C3_DRB, C2f_DRB, C3_DWR_DRB, C2f_DWR_DRB):
+                     C3_UniRepLKNetBlock, C2f_UniRepLKNetBlock, C3_DRB, C2f_DRB, C3_DWR_DRB, C2f_DWR_DRB, CSP_EDLAN,
+                     C3_AggregatedAtt, C2f_AggregatedAtt, C3_DCNv4, C2f_DCNv4):
                 args.insert(2, n)  # number of repeats
                 n = 1
         elif m is AIFI:
@@ -809,7 +812,7 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
         elif m is Concat:
             c2 = sum(ch[x] for x in f)
         elif m in (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, Detect_AFPN_P345, Detect_AFPN_P345_Custom, 
-                   Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Segment, Segment_Efficient, Pose):
+                   Detect_Efficient, DetectAux, Detect_DyHeadWithDCNV3, Detect_DyHeadWithDCNV4, Segment, Segment_Efficient, Pose):
             args.append([ch[x] for x in f])
             if m in (Segment, Segment_Efficient):
                 args[2] = make_divisible(min(args[2], max_channels) * width, 8)
@@ -836,7 +839,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
                    SwinTransformer_Tiny,
                    repvit_m0_9, repvit_m1_0, repvit_m1_1, repvit_m1_5, repvit_m2_3,
                    CSWin_tiny, CSWin_small, CSWin_base, CSWin_large,
-                   unireplknet_a, unireplknet_f, unireplknet_p, unireplknet_n, unireplknet_t, unireplknet_s, unireplknet_b, unireplknet_l, unireplknet_xl
+                   unireplknet_a, unireplknet_f, unireplknet_p, unireplknet_n, unireplknet_t, unireplknet_s, unireplknet_b, unireplknet_l, unireplknet_xl,
+                   transnext_micro, transnext_tiny, transnext_small, transnext_base
                    }:
             if m is RevCol:
                 args[1] = [make_divisible(min(k, max_channels) * width, 8) for k in args[1]]
@@ -846,7 +850,8 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
         elif m in {EMA, SpatialAttention, BiLevelRoutingAttention, BiLevelRoutingAttention_nchw,
                    TripletAttention, CoordAtt, CBAM, BAMBlock, LSKBlock, ScConv, LAWDS, EMSConv, EMSConvP,
                    SEAttention, CPCA, Partial_conv3, FocalModulation, EfficientAttention, MPCA, deformable_LKA,
-                   EffectiveSEModule, LSKA, SegNext_Attention, DAttention, MLCA}:
+                   EffectiveSEModule, LSKA, SegNext_Attention, DAttention, MLCA, TransNeXt_AggregatedAttention,
+                   ChannelAttention_HSFPN, DySample, CARAFE}:
             c2 = ch[f]
             args = [c2, *args]
             # print(args)
@@ -881,6 +886,22 @@ def parse_model(d, ch, verbose=True, warehouse_manager=None):  # model_dict, inp
         elif m is TopBasicLayer:
             c2 = sum(args[1])
         # --------------GOLD-YOLO--------------
+        # --------------ASF--------------
+        elif m is Zoom_cat:
+            c2 = sum(ch[x] for x in f)
+        elif m is Add:
+            c2 = ch[f[-1]]
+        elif m is ScalSeq:
+            c1 = [ch[x] for x in f]
+            c2 = make_divisible(args[0] * width, 8)
+            args = [c1, c2]
+        elif m is asf_attention_model:
+            args = [ch[f[-1]]]
+        # --------------ASF--------------
+        elif m is SDI:
+            args = [[ch[x] for x in f]]
+        elif m is Multiply:
+            c2 = ch[f[0]]
         else:
             c2 = ch[f]
 
@@ -988,7 +1009,7 @@ def guess_model_task(model):
         for m in model.modules():
             if isinstance(m, (Detect, Detect_DyHead, Detect_AFPN_P2345, Detect_AFPN_P2345_Custom, 
                               Detect_AFPN_P345, Detect_AFPN_P345_Custom, Detect_Efficient, DetectAux,
-                              Detect_DyHeadWithDCNV3)):
+                              Detect_DyHeadWithDCNV3, Detect_DyHeadWithDCNV4)):
                 return 'detect'
             elif isinstance(m, (Segment, Segment_Efficient)):
                 return 'segment'

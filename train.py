@@ -15,7 +15,7 @@ if __name__ == '__main__':
                 device='0',
                 optimizer='SGD', # using SGD
                 # resume='', # last.pt path
-                # amp=False # close amp
+                # amp=False, # close amp
                 # fraction=0.2,
                 project='runs/train',
                 name='exp',

@@ -113,6 +113,9 @@ class BaseValidator:
             self.args.half = self.device.type != 'cpu'  # force FP16 val during training
             model = trainer.ema.ema or trainer.model
             model = model.half() if self.args.half else model.float()
+            if hasattr(model, 'criterion'):
+                if hasattr(model.criterion.bbox_loss, 'wiou_loss'):
+                    model.criterion.bbox_loss.wiou_loss.eval()
             # self.model = model
             self.loss = torch.zeros_like(trainer.loss_items, device=trainer.device)
             self.args.plots &= trainer.stopper.possible_stop or (trainer.epoch == trainer.epochs - 1)
