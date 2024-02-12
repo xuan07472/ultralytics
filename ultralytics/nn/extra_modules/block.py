@@ -2866,7 +2866,7 @@ class RepLightConv(nn.Module):
         """Initialize Conv layer with given arguments including activation."""
         super().__init__()
         self.conv1 = Conv(c1, c2, 1, act=False)
-        self.conv2 = RepConv(c2, c2, k, g=math.gcd(c1, c2), act=act)
+        self.conv2 = RepConv(c2, c2, k, g=c2, act=act)
 
     def forward(self, x):
         """Apply 2 convolutions to input tensor."""
