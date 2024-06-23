@@ -14,6 +14,6 @@ if __name__ == '__main__':
               # save_json=True, # if you need to cal coco metrice
               # project='runs/val/2080ti',
               project='runs/val/',
-              name='b150n-C2f_SCConv_b2_Triplet_v1_c',
+              name='b150n-C2f_SCConv_b2_Triplet_v1_c16',
               )
 
