@@ -1,6 +1,5 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
-import torch
 import inspect
 import sys
 from pathlib import Path
@@ -331,8 +330,8 @@ class Model(nn.Module):
         overrides = yaml_load(checks.check_yaml(kwargs['cfg'])) if kwargs.get('cfg') else self.overrides
         custom = {'data': TASK2DATA[self.task]}  # method defaults
         args = {**overrides, **custom, **kwargs, 'mode': 'train'}  # highest priority args on the right
-        # if args.get('resume'):
-        #     args['resume'] = self.ckpt_path
+        if args.get('resume'):
+            args['resume'] = self.ckpt_path
 
         self.trainer = (trainer or self._smart_load('trainer'))(overrides=args, _callbacks=self.callbacks)
         if not args.get('resume'):  # manually set model only if not resuming
@@ -432,13 +431,3 @@ class Model(nn.Module):
             task_map (dict): The map of model task to mode classes.
         """
         raise NotImplementedError('Please provide task map for your model!')
-
-    def profile(self, imgsz):
-        if type(imgsz) is int:
-            inputs = torch.randn((2, 3, imgsz, imgsz))
-        else:
-            inputs = torch.randn((2, 3, imgsz[0], imgsz[1]))
-        if next(self.model.parameters()).device.type == 'cuda':
-            return self.model.predict(inputs.to(torch.device('cuda')), profile=True)
-        else:
-            self.model.predict(inputs, profile=True)
