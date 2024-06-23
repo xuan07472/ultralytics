@@ -170,9 +170,6 @@ pnnx*
 # Custom configuration
 *.cache
 try.ipynb
-*_c.yaml
 *_c.ipynb
 *_c.py
-yolov8-v*.patch
-论文出图/
-实验文件/
+
