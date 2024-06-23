@@ -1,16 +1,16 @@
 ---
 comments: true
-description: Export YOLOv5 models to TFLite, ONNX, CoreML, and TensorRT formats. Achieve up to 5x GPU speedup using TensorRT. Benchmarks included.
+description: Learn how to export a trained YOLOv5 model from PyTorch to different formats including TorchScript, ONNX, OpenVINO, TensorRT, and CoreML, and how to use these models.
+keywords: Ultralytics, YOLOv5, model export, PyTorch, TorchScript, ONNX, OpenVINO, TensorRT, CoreML, TensorFlow
 ---
 
 # TFLite, ONNX, CoreML, TensorRT Export
 
-📚 This guide explains how to export a trained YOLOv5 🚀 model from PyTorch to ONNX and TorchScript formats.  
-UPDATED 8 December 2022.
+📚 This guide explains how to export a trained YOLOv5 🚀 model from PyTorch to ONNX and TorchScript formats. UPDATED 8 December 2022.
 
 ## Before You Start
 
-Clone repo and install [requirements.txt](https://github.com/ultralytics/yolov5/blob/master/requirements.txt) in a [**Python>=3.7.0**](https://www.python.org/) environment, including [**PyTorch>=1.7**](https://pytorch.org/get-started/locally/). [Models](https://github.com/ultralytics/yolov5/tree/master/models) and [datasets](https://github.com/ultralytics/yolov5/tree/master/data) download automatically from the latest YOLOv5 [release](https://github.com/ultralytics/yolov5/releases).
+Clone repo and install [requirements.txt](https://github.com/ultralytics/yolov5/blob/master/requirements.txt) in a [**Python>=3.8.0**](https://www.python.org/) environment, including [**PyTorch>=1.8**](https://pytorch.org/get-started/locally/). [Models](https://github.com/ultralytics/yolov5/tree/master/models) and [datasets](https://github.com/ultralytics/yolov5/tree/master/data) download automatically from the latest YOLOv5 [release](https://github.com/ultralytics/yolov5/releases).
 
 ```bash
 git clone https://github.com/ultralytics/yolov5  # clone
@@ -24,8 +24,7 @@ For [TensorRT](https://developer.nvidia.com/tensorrt) export example (requires G
 
 YOLOv5 inference is officially supported in 11 formats:
 
-💡 ProTip: Export to ONNX or OpenVINO for up to 3x CPU speedup. See [CPU Benchmarks](https://github.com/ultralytics/yolov5/pull/6613).
-💡 ProTip: Export to TensorRT for up to 5x GPU speedup. See [GPU Benchmarks](https://github.com/ultralytics/yolov5/pull/6963).
+💡 ProTip: Export to ONNX or OpenVINO for up to 3x CPU speedup. See [CPU Benchmarks](https://github.com/ultralytics/yolov5/pull/6613). 💡 ProTip: Export to TensorRT for up to 5x GPU speedup. See [GPU Benchmarks](https://github.com/ultralytics/yolov5/pull/6963).
 
 | Format                                                                     | `export.py --include` | Model                     |
 |:---------------------------------------------------------------------------|:----------------------|:--------------------------|
@@ -110,12 +109,12 @@ Output:
 
 ```bash
 export: data=data/coco128.yaml, weights=['yolov5s.pt'], imgsz=[640, 640], batch_size=1, device=cpu, half=False, inplace=False, train=False, keras=False, optimize=False, int8=False, dynamic=False, simplify=False, opset=12, verbose=False, workspace=4, nms=False, agnostic_nms=False, topk_per_class=100, topk_all=100, iou_thres=0.45, conf_thres=0.25, include=['torchscript', 'onnx']
-YOLOv5 🚀 v6.2-104-ge3e5122 Python-3.7.13 torch-1.12.1+cu113 CPU
+YOLOv5 🚀 v6.2-104-ge3e5122 Python-3.8.0 torch-1.12.1+cu113 CPU
 
 Downloading https://github.com/ultralytics/yolov5/releases/download/v6.2/yolov5s.pt to yolov5s.pt...
 100% 14.1M/14.1M [00:00<00:00, 274MB/s]
 
-Fusing layers... 
+Fusing layers...
 YOLOv5s summary: 213 layers, 7225885 parameters, 0 gradients
 
 PyTorch: starting from yolov5s.pt with output shape (1, 25200, 85) (14.1 MB)
@@ -128,8 +127,8 @@ ONNX: export success ✅ 2.3s, saved as yolov5s.onnx (28.0 MB)
 
 Export complete (5.5s)
 Results saved to /content/yolov5
-Detect:          python detect.py --weights yolov5s.onnx 
-Validate:        python val.py --weights yolov5s.onnx 
+Detect:          python detect.py --weights yolov5s.onnx
+Validate:        python val.py --weights yolov5s.onnx
 PyTorch Hub:     model = torch.hub.load('ultralytics/yolov5', 'custom', 'yolov5s.onnx')
 Visualize:       https://netron.app/
 ```
@@ -147,7 +146,7 @@ The 3 exported models will be saved alongside the original PyTorch model:
 ```bash
 python detect.py --weights yolov5s.pt                 # PyTorch
                            yolov5s.torchscript        # TorchScript
-                           yolov5s.onnx               # ONNX Runtime or OpenCV DNN with --dnn
+                           yolov5s.onnx               # ONNX Runtime or OpenCV DNN with dnn=True
                            yolov5s_openvino_model     # OpenVINO
                            yolov5s.engine             # TensorRT
                            yolov5s.mlmodel            # CoreML (macOS only)
@@ -163,7 +162,7 @@ python detect.py --weights yolov5s.pt                 # PyTorch
 ```bash
 python val.py --weights yolov5s.pt                 # PyTorch
                         yolov5s.torchscript        # TorchScript
-                        yolov5s.onnx               # ONNX Runtime or OpenCV DNN with --dnn
+                        yolov5s.onnx               # ONNX Runtime or OpenCV DNN with dnn=True
                         yolov5s_openvino_model     # OpenVINO
                         yolov5s.engine             # TensorRT
                         yolov5s.mlmodel            # CoreML (macOS Only)
@@ -231,7 +230,7 @@ YOLOv5 OpenVINO C++ inference examples:
 
 ## Environments
 
-YOLOv5 may be run in any of the following up-to-date verified environments (with all dependencies including [CUDA](https://developer.nvidia.com/cuda)/[CUDNN](https://developer.nvidia.com/cudnn), [Python](https://www.python.org/) and [PyTorch](https://pytorch.org/) preinstalled):
+YOLOv5 is designed to be run in the following up-to-date verified environments (with all dependencies including [CUDA](https://developer.nvidia.com/cuda)/[CUDNN](https://developer.nvidia.com/cudnn), [Python](https://www.python.org/) and [PyTorch](https://pytorch.org/) preinstalled):
 
 - **Notebooks** with free GPU: <a href="https://bit.ly/yolov5-paperspace-notebook"><img src="https://assets.paperspace.io/img/gradient-badge.svg" alt="Run on Gradient"></a> <a href="https://colab.research.google.com/github/ultralytics/yolov5/blob/master/tutorial.ipynb"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"></a> <a href="https://www.kaggle.com/ultralytics/yolov5"><img src="https://kaggle.com/static/images/open-in-kaggle.svg" alt="Open In Kaggle"></a>
 - **Google Cloud** Deep Learning VM. See [GCP Quickstart Guide](https://docs.ultralytics.com/yolov5/environments/google_cloud_quickstart_tutorial/)
