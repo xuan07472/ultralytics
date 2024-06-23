@@ -171,16 +171,12 @@ class yolov8_erf:
 
 def get_params():
     params = {
-        # 'weight': '/home/ubuntu/ultralytics/runs/train/b150n_baseline_3080_202_cm10_c/weights/best.pt', # TODO: 只需要指定权重即可
-        # 'weight': '/home/ubuntu/ultralytics/runs/202/3080/b150n_C2f_SCConv_b2_Triplet_v1_c/weights/best.pt',
-        # 'weight': '/home/ubuntu/ultralytics/runs/train/b150n_baseline_3080_114_c/weights/best.pt',
-        'weight': '/home/ubuntu/ultralytics/runs/train/b150n_baseline_3080_202_cm10_c/weights/best.pt',
+        'weight': '/home/ubuntu/ultralytics/runs/train/yolov8n/weights/best.pt',
         'device': 'cuda:0',
-        'layer': '4', # string 一般为主干输出层
+        'layer': '4',
         'dataset': '/home/ubuntu/ultralytics/datasets/luderick_base/images/train',
         'num_images': 50,
-        # 'save_path': 'result_bab4_114.png'
-        'save_path': 'result_st_b2_114.png'
+        'save_path': 'result_b2.png'
     }
     return params
 
