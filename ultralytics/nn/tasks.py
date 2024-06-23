@@ -10,7 +10,7 @@ import torch.nn as nn
 from ultralytics.nn.modules import (AIFI, C1, C2, C3, C3TR, SPP, SPPF, Bottleneck, BottleneckCSP, C2f, C3Ghost, C3x,
                                     Classify, Concat, Conv, Conv2, ConvTranspose, Detect, DWConv, DWConvTranspose2d,
                                     Focus, GhostBottleneck, GhostConv, HGBlock, HGStem, Pose, RepC3, RepConv,
-                                    RTDETRDecoder, Segment, C2f_SCConv, TripletAttention)
+                                    RTDETRDecoder, Segment, C2f_SCConv, TripletAttention, CBAM, CoordAtt, SEAttention)
 from ultralytics.utils import DEFAULT_CFG_DICT, DEFAULT_CFG_KEYS, LOGGER, colorstr, emojis, yaml_load
 from ultralytics.utils.checks import check_requirements, check_suffix, check_yaml
 from ultralytics.utils.loss import v8ClassificationLoss, v8DetectionLoss, v8PoseLoss, v8SegmentationLoss
@@ -712,7 +712,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
         elif m is RTDETRDecoder:  # special case, channels arg must be passed in index 1
             args.insert(1, [ch[x] for x in f])
         # 注册注意力
-        elif m in {TripletAttention}:
+        elif m in {TripletAttention, CBAM, CoordAtt, SEAttention}:
             c2 = ch[f]
             args = [c2, *args]
         
